@@ -88,6 +88,10 @@ Compat mode must preserve:
 - inbox/outbox payload schema expectations
 - routing and failover state semantics
 - approval nonce semantics
+- collector schema normalization for runtime files:
+  - resolve agent lifecycle from `status`, fallback `state`
+  - if both are missing, infer `busy` when dispatch/current task exists; otherwise `unknown`
+  - any `/var/odin/*` collector key mapping change must include a fixture test for alias handling
 
 ## Observability contract
 
