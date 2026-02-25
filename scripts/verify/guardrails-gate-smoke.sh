@@ -183,4 +183,9 @@ expect_failure \
   "denylisted by guardrails" \
   env ODIN_GUARDRAILS_ACK=yes scripts/odin/odin --guardrails "${QUOTED_KEY_DENY_GUARDRAILS_PATH}" gateway add cli --confirm
 
+expect_success \
+  "default guardrails example is consumable with acknowledgement" \
+  "start placeholder" \
+  env ODIN_GUARDRAILS_ACK=yes scripts/odin/odin --guardrails config/guardrails.yaml.example start
+
 echo "[guardrails-gate] COMPLETE"

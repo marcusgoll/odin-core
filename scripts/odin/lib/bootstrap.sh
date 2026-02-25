@@ -268,6 +268,7 @@ odin_bootstrap_guardrails_list_contains() {
       }
       sub(/\r$/, "", raw)
       line = raw
+      sub(/^[[:space:]]*#.*/, "", line)
       sub(/[[:space:]]+#.*/, "", line)
       if (line ~ /^[[:space:]]*$/) {
         next
