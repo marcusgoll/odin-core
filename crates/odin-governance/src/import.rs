@@ -46,6 +46,9 @@ pub fn evaluate_install(candidate: &SkillImportCandidate, ack: Ack) -> Result<In
     if candidate.record.trust_level == TrustLevel::Untrusted {
         reasons.push("untrusted_skill".to_string());
     }
+    if !candidate.scripts.is_empty() {
+        reasons.push("script_present".to_string());
+    }
     if !findings.is_empty() {
         reasons.push("risk_scan_findings".to_string());
     }

@@ -25,6 +25,18 @@ fn candidate_trusted_local() -> SkillImportCandidate {
     }
 }
 
+fn candidate_trusted_with_benign_script() -> SkillImportCandidate {
+    let mut record = SkillRecord::default_for("trusted-script");
+    record.trust_level = TrustLevel::Trusted;
+    record.source = "local:/skills/trusted-script".to_string();
+
+    SkillImportCandidate {
+        record,
+        scripts: vec!["#!/usr/bin/env bash\necho running".to_string()],
+        readme: None,
+    }
+}
+
 #[test]
 fn untrusted_skill_requires_ack() {
     let plan = evaluate_install(&candidate_untrusted_with_script(), Ack::None).expect("plan");
@@ -38,5 +50,13 @@ fn trusted_skill_without_scripts_can_proceed() {
     let plan = evaluate_install(&candidate_trusted_local(), Ack::None).expect("plan");
 
     assert_eq!(plan.status, InstallGateStatus::Allowed);
+    assert!(plan.findings.is_empty(), "expected no scan findings");
+}
+
+#[test]
+fn trusted_skill_with_script_requires_ack_even_without_scan_findings() {
+    let plan = evaluate_install(&candidate_trusted_with_benign_script(), Ack::None).expect("plan");
+
+    assert_eq!(plan.status, InstallGateStatus::BlockedAckRequired);
     assert!(plan.findings.is_empty(), "expected no scan findings");
 }
