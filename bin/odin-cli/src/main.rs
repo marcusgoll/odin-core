@@ -1,10 +1,10 @@
-use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
 use anyhow::Context;
+use clap::{Parser, Subcommand, ValueEnum};
 use odin_audit::NoopAuditSink;
 use odin_compat_bash::{
     BashBackendStateAdapter, BashFailoverAdapter, BashTaskIngressAdapter, LegacyScriptPaths,
@@ -25,58 +25,120 @@ struct CliConfig {
     run_once: bool,
 }
 
-impl Default for CliConfig {
-    fn default() -> Self {
-        Self {
-            config_path: "config/default.yaml".to_string(),
-            legacy_root: None,
-            legacy_odin_dir: PathBuf::from("/var/odin"),
-            plugins_root: PathBuf::from("examples/private-plugins"),
-            task_file: None,
-            run_once: false,
+#[derive(Clone, Debug, Parser)]
+#[command(name = "odin-cli")]
+#[command(about = "Odin runtime and bootstrap CLI")]
+struct Cli {
+    #[arg(long = "config", default_value = "config/default.yaml", global = true)]
+    config_path: String,
+    #[arg(long, global = true)]
+    legacy_root: Option<PathBuf>,
+    #[arg(long, default_value = "/var/odin", global = true)]
+    legacy_odin_dir: PathBuf,
+    #[arg(long, default_value = "examples/private-plugins", global = true)]
+    plugins_root: PathBuf,
+    #[arg(long, global = true)]
+    task_file: Option<PathBuf>,
+    #[arg(long, global = true)]
+    run_once: bool,
+    #[command(subcommand)]
+    command: Option<CliCommand>,
+}
+
+#[derive(Clone, Debug, Subcommand)]
+enum CliCommand {
+    Connect {
+        provider: String,
+        #[arg(value_enum)]
+        auth_mode: AuthMode,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        confirm: bool,
+    },
+    Start {
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        confirm: bool,
+    },
+    Tui {
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        confirm: bool,
+    },
+    Inbox {
+        #[command(subcommand)]
+        command: InboxCommand,
+    },
+    Gateway {
+        #[command(subcommand)]
+        command: GatewayCommand,
+    },
+    Verify {
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+#[derive(Clone, Debug, Subcommand)]
+enum InboxCommand {
+    Add {
+        title: String,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        confirm: bool,
+    },
+    List {
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+#[derive(Clone, Debug, Subcommand)]
+enum GatewayCommand {
+    Add {
+        #[arg(value_enum)]
+        source: GatewaySource,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        confirm: bool,
+    },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum AuthMode {
+    Oauth,
+    Api,
+}
+
+impl AuthMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Oauth => "oauth",
+            Self::Api => "api",
         }
     }
 }
 
-fn parse_cli_config() -> CliConfig {
-    let mut cfg = CliConfig::default();
-    let mut args = env::args().skip(1);
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum GatewaySource {
+    Cli,
+    Slack,
+    Telegram,
+}
 
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--config" => {
-                if let Some(path) = args.next() {
-                    cfg.config_path = path;
-                }
-            }
-            "--legacy-root" => {
-                if let Some(path) = args.next() {
-                    cfg.legacy_root = Some(PathBuf::from(path));
-                }
-            }
-            "--legacy-odin-dir" => {
-                if let Some(path) = args.next() {
-                    cfg.legacy_odin_dir = PathBuf::from(path);
-                }
-            }
-            "--plugins-root" => {
-                if let Some(path) = args.next() {
-                    cfg.plugins_root = PathBuf::from(path);
-                }
-            }
-            "--task-file" => {
-                if let Some(path) = args.next() {
-                    cfg.task_file = Some(PathBuf::from(path));
-                }
-            }
-            "--run-once" => {
-                cfg.run_once = true;
-            }
-            _ => {}
+impl GatewaySource {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Cli => "cli",
+            Self::Slack => "slack",
+            Self::Telegram => "telegram",
         }
     }
-
-    cfg
 }
 
 fn sample_action_request() -> ActionRequest {
@@ -104,8 +166,86 @@ impl TaskIngress for StdoutTaskIngress {
     }
 }
 
-fn main() -> anyhow::Result<()> {
-    let cfg = parse_cli_config();
+fn handle_bootstrap_command(command: CliCommand) {
+    match command {
+        CliCommand::Connect {
+            provider,
+            auth_mode,
+            dry_run,
+            confirm: _,
+        } => {
+            if dry_run {
+                println!(
+                    "DRY-RUN connect provider={provider} auth={}",
+                    auth_mode.as_str()
+                );
+            } else {
+                println!(
+                    "connect placeholder provider={provider} auth={}",
+                    auth_mode.as_str()
+                );
+            }
+        }
+        CliCommand::Start {
+            dry_run,
+            confirm: _,
+        } => {
+            if dry_run {
+                println!("DRY-RUN start");
+            } else {
+                println!("start placeholder");
+            }
+        }
+        CliCommand::Tui {
+            dry_run,
+            confirm: _,
+        } => {
+            if dry_run {
+                println!("DRY-RUN tui");
+            } else {
+                println!("tui placeholder");
+            }
+        }
+        CliCommand::Inbox { command } => match command {
+            InboxCommand::Add {
+                title,
+                dry_run,
+                confirm: _,
+            } => {
+                if dry_run {
+                    println!("DRY-RUN inbox add title={title}");
+                } else {
+                    println!("inbox add placeholder title={title}");
+                }
+            }
+            InboxCommand::List { dry_run: _ } => {
+                println!("inbox list placeholder (empty)");
+            }
+        },
+        CliCommand::Gateway { command } => match command {
+            GatewayCommand::Add {
+                source,
+                dry_run,
+                confirm: _,
+            } => {
+                if dry_run {
+                    println!("DRY-RUN gateway add source={}", source.as_str());
+                } else {
+                    println!("gateway add placeholder source={}", source.as_str());
+                }
+            }
+        },
+        CliCommand::Verify { dry_run } => {
+            if dry_run {
+                println!("DRY-RUN verify");
+            } else {
+                println!("verify placeholder guardrails=present mode=OPERATE task_cycle=verified");
+            }
+        }
+    }
+}
+
+fn run_legacy_runtime(cfg: CliConfig) -> anyhow::Result<()> {
     println!("odin-cli starting with config: {}", cfg.config_path);
     println!("plugins root: {}", cfg.plugins_root.display());
 
@@ -183,4 +323,23 @@ fn main() -> anyhow::Result<()> {
     loop {
         thread::sleep(Duration::from_secs(60));
     }
+}
+
+fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+    let cfg = CliConfig {
+        config_path: cli.config_path.clone(),
+        legacy_root: cli.legacy_root.clone(),
+        legacy_odin_dir: cli.legacy_odin_dir.clone(),
+        plugins_root: cli.plugins_root.clone(),
+        task_file: cli.task_file.clone(),
+        run_once: cli.run_once,
+    };
+
+    if let Some(command) = cli.command {
+        handle_bootstrap_command(command);
+        return Ok(());
+    }
+
+    run_legacy_runtime(cfg)
 }
