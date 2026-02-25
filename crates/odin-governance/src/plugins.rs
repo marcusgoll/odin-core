@@ -426,10 +426,29 @@ fn extract_absolute_path(token: &str) -> Option<String> {
         return Some(stripped);
     }
 
-    let (_, value) = stripped.split_once('=')?;
-    let value = strip_wrapping_quotes(value);
-    if Path::new(&value).is_absolute() {
-        Some(value)
+    if let Some((_, value)) = stripped.split_once('=') {
+        let value = strip_wrapping_quotes(value);
+        if Path::new(&value).is_absolute() {
+            return Some(value);
+        }
+    }
+
+    extract_attached_short_option_absolute_path(&stripped)
+}
+
+fn extract_attached_short_option_absolute_path(token: &str) -> Option<String> {
+    if !token.starts_with('-') || token.starts_with("--") {
+        return None;
+    }
+
+    let slash_index = token.find('/')?;
+    if slash_index < 2 {
+        return None;
+    }
+
+    let candidate = &token[slash_index..];
+    if Path::new(candidate).is_absolute() {
+        Some(candidate.to_string())
     } else {
         None
     }
@@ -503,6 +522,10 @@ fn has_unscoped_relative_path(args: &[String]) -> bool {
         };
 
         if candidate.is_empty() {
+            return false;
+        }
+
+        if !looks_path_like_option_value(&candidate) {
             return false;
         }
 

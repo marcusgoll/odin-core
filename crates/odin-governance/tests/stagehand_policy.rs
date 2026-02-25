@@ -365,3 +365,68 @@ fn stagehand_denies_quoted_parent_traversal_option_value_without_workspace_polic
         }
     );
 }
+
+#[test]
+fn stagehand_allows_positional_scalar_with_in_workspace_absolute_path() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let workspace = std::env::temp_dir().join(format!("odin-stagehand-positional-allow-{unique}"));
+    let file = workspace.join("input.txt");
+    fs::create_dir_all(&workspace).expect("create workspace");
+    fs::write(&file, "fixture").expect("write fixture");
+
+    let policy = stagehand_default_policy()
+        .with_enabled(true)
+        .with_commands(["cat"])
+        .with_workspaces([workspace.to_string_lossy().to_string()]);
+
+    let decision = policy.evaluate(Action::RunCommand(format!(
+        "cat always {}",
+        file.to_string_lossy()
+    )));
+
+    assert_eq!(
+        decision,
+        PermissionDecision::Allow {
+            reason_code: "command_allowlisted".to_string()
+        }
+    );
+
+    fs::remove_dir_all(&workspace).expect("cleanup workspace");
+}
+
+#[test]
+fn stagehand_denies_attached_short_option_absolute_path_outside_workspace() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let allowed_workspace = std::env::temp_dir().join(format!("odin-stagehand-allowed-{unique}"));
+    let outside_workspace = std::env::temp_dir().join(format!("odin-stagehand-outside-{unique}"));
+    let outside_file = outside_workspace.join("secret.txt");
+    fs::create_dir_all(&allowed_workspace).expect("create allowed workspace");
+    fs::create_dir_all(&outside_workspace).expect("create outside workspace");
+    fs::write(&outside_file, "secret").expect("write outside fixture");
+
+    let policy = stagehand_default_policy()
+        .with_enabled(true)
+        .with_commands(["cat"])
+        .with_workspaces([allowed_workspace.to_string_lossy().to_string()]);
+
+    let decision = policy.evaluate(Action::RunCommand(format!(
+        "cat -f{}",
+        outside_file.to_string_lossy()
+    )));
+
+    assert_eq!(
+        decision,
+        PermissionDecision::Deny {
+            reason_code: "command_path_outside_allowlisted_workspace".to_string()
+        }
+    );
+
+    fs::remove_dir_all(&allowed_workspace).expect("cleanup allowed workspace");
+    fs::remove_dir_all(&outside_workspace).expect("cleanup outside workspace");
+}
