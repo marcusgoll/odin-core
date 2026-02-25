@@ -164,6 +164,10 @@ impl StagehandPolicy {
             return deny("command_not_allowlisted");
         }
 
+        if has_relative_parent_traversal(&args) {
+            return deny("command_relative_path_traversal");
+        }
+
         if first_absolute_path_outside_workspaces(&args, &self.allowed_workspaces).is_some() {
             return deny("command_path_outside_allowlisted_workspace");
         }
@@ -234,16 +238,21 @@ where
 }
 
 pub fn stagehand_policy_from_envelope(envelope: &PluginPermissionEnvelope) -> StagehandPolicy {
-    let mut policy = stagehand_default_policy().with_enabled(envelope.trust_level != TrustLevel::Untrusted);
+    let can_enable = envelope.trust_level != TrustLevel::Untrusted;
+    let mut policy = stagehand_default_policy().with_enabled(can_enable);
 
     for permission in &envelope.permissions {
-        apply_permission_scope(&mut policy, permission);
+        apply_permission_scope(&mut policy, permission, can_enable);
     }
 
     policy
 }
 
-fn apply_permission_scope(policy: &mut StagehandPolicy, permission: &DelegationCapability) {
+fn apply_permission_scope(
+    policy: &mut StagehandPolicy,
+    permission: &DelegationCapability,
+    can_enable: bool,
+) {
     match permission.id.as_str() {
         "browser.observe" | "stagehand.observe_url" | "stagehand.observe_domain" => {
             policy.allowed_domains.extend(
@@ -270,7 +279,9 @@ fn apply_permission_scope(policy: &mut StagehandPolicy, permission: &DelegationC
             );
         }
         "stagehand.enabled" => {
-            policy.enabled = true;
+            if can_enable {
+                policy.enabled = true;
+            }
         }
         _ => {}
     }
@@ -308,24 +319,24 @@ fn extract_host(url: &str) -> Option<String> {
 
 fn normalize_domain(domain: &str) -> Option<DomainRule> {
     let trimmed = domain.trim();
-    let (allow_subdomains, domain_part) = if let Some(stripped) = trimmed.strip_prefix("*.") {
-        (true, stripped)
-    } else {
-        (false, trimmed)
-    };
-
-    let lowered = domain_part.to_ascii_lowercase();
-    let normalized = lowered
+    let lowered = trimmed.to_ascii_lowercase();
+    let no_scheme = lowered
         .strip_prefix("https://")
         .or_else(|| lowered.strip_prefix("http://"))
         .unwrap_or(&lowered);
-    let host = normalized
+    let (allow_subdomains, domain_part) = if let Some(stripped) = no_scheme.strip_prefix("*.") {
+        (true, stripped)
+    } else {
+        (false, no_scheme)
+    };
+
+    let host = domain_part
         .split(['/', '?', '#'])
         .next()
-        .unwrap_or(normalized)
+        .unwrap_or(domain_part)
         .split(':')
         .next()
-        .unwrap_or(normalized)
+        .unwrap_or(domain_part)
         .trim()
         .to_string();
 
@@ -431,6 +442,24 @@ fn has_unsafe_shell_syntax(command: &str) -> bool {
     command
         .chars()
         .any(|ch| matches!(ch, ';' | '|' | '&' | '>' | '<' | '`' | '$' | '(' | ')'))
+}
+
+fn has_relative_parent_traversal(args: &[String]) -> bool {
+    args.iter().any(|arg| {
+        has_relative_parent_segment(arg)
+            || arg
+                .split_once('=')
+                .map(|(_, value)| has_relative_parent_segment(value))
+                .unwrap_or(false)
+    })
+}
+
+fn has_relative_parent_segment(token: &str) -> bool {
+    let path = Path::new(token);
+    !path.is_absolute()
+        && path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
 }
 
 fn normalize_lexical_path(path: &Path) -> Option<PathBuf> {
