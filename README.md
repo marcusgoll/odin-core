@@ -15,6 +15,21 @@ docker compose up -d
 cargo run -p odin-cli -- --config config/default.yaml
 ```
 
+## Bootstrap wrapper contract (minimal)
+
+```bash
+scripts/odin/odin help
+scripts/odin/odin connect claude oauth --dry-run
+scripts/odin/odin start --dry-run
+scripts/odin/odin tui --dry-run
+scripts/odin/odin inbox add "test task" --dry-run
+scripts/odin/odin inbox list
+scripts/odin/odin gateway add cli --dry-run
+scripts/odin/odin verify --dry-run
+```
+
+Conservative default: if `config/guardrails.yaml` is missing, mutating commands are blocked unless `--dry-run` is used.
+
 ## TUI Dashboard
 
 Install dependency once:
