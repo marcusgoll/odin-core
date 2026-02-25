@@ -13,7 +13,18 @@ pub struct RiskFinding {
 }
 
 const SHELL_PATTERNS: &[&str] = &["curl | sh", "| sh", "| bash", "bash -c", "sh -c"];
-const NETWORK_PATTERNS: &[&str] = &["http://", "https://", "curl ", "wget "];
+const NETWORK_PATTERNS: &[&str] = &[
+    "curl ",
+    "wget ",
+    "invoke-webrequest",
+    "invoke-restmethod",
+    "requests.",
+    "http.client",
+    "reqwest::",
+    "net/http",
+    "axios.",
+    "fetch(",
+];
 const SECRET_PATTERNS: &[&str] = &["aws_secret", "secret_key", "api_key", "token=", "password="];
 const DELETE_PATTERNS: &[&str] = &["rm -rf", "del /f", "shred "];
 

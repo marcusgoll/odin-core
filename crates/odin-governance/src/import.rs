@@ -1,7 +1,7 @@
 use odin_plugin_protocol::{SkillRecord, TrustLevel};
 use thiserror::Error;
 
-use crate::risk_scan::{RiskFinding, scan_skill_content};
+use crate::risk_scan::{RiskCategory, RiskFinding, scan_skill_content};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Ack {
@@ -42,6 +42,9 @@ pub fn evaluate_install(candidate: &SkillImportCandidate, ack: Ack) -> Result<In
 
     let findings = scan_skill_content(&candidate.scripts, candidate.readme.as_deref());
     let mut reasons = Vec::new();
+    let has_secret_finding = findings
+        .iter()
+        .any(|finding| finding.category == RiskCategory::Secret);
 
     if candidate.record.trust_level == TrustLevel::Untrusted {
         reasons.push("untrusted_skill".to_string());
@@ -49,8 +52,8 @@ pub fn evaluate_install(candidate: &SkillImportCandidate, ack: Ack) -> Result<In
     if !candidate.scripts.is_empty() {
         reasons.push("script_present".to_string());
     }
-    if !findings.is_empty() {
-        reasons.push("risk_scan_findings".to_string());
+    if has_secret_finding {
+        reasons.push("secret_touching_risk".to_string());
     }
 
     let ack_required = !reasons.is_empty();
