@@ -35,6 +35,16 @@ Wrapper command:
 bash scripts/odin/odin-tui --live
 ```
 
+Profile selection:
+
+```bash
+# core profile is default
+python3 scripts/odin/odin-tui.py --profile core --live
+
+# legacy profile keeps previous monolithic dashboard behavior
+python3 scripts/odin/odin-tui.py --profile legacy --live
+```
+
 ## Watchdog task bridge (compat canary)
 
 Process one compat `watchdog_poll` task through plugin policy/execution path:
