@@ -109,11 +109,13 @@ odin_bootstrap_mode_state_require_event() {
 
 odin_bootstrap_mode_state_require_mode() {
   local mode="$1"
+  local rc=0
   if odin_bootstrap_mode_state_set_mode_if_allowed "${mode}"; then
     return 0
+  else
+    rc=$?
   fi
 
-  local rc=$?
   if [[ "${rc}" -eq 2 ]]; then
     odin_bootstrap_err "BLOCKED mode transition to ${mode}: confidence/guardrails/task-cycle gate not satisfied."
     return 2

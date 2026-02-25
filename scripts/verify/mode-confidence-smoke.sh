@@ -109,6 +109,31 @@ run_cli() {
 }
 
 echo "[mode-confidence] RUN cli path connect+tui+inbox+verify"
+low_confidence_state_path="${TMP_DIR}/low-confidence-state.json"
+low_verify_out_file="$(mktemp "${TMP_DIR}/low-verify.out.XXXXXX")"
+low_verify_err_file="$(mktemp "${TMP_DIR}/low-verify.err.XXXXXX")"
+set +e
+env \
+  ODIN_MODE_STATE_PATH="${low_confidence_state_path}" \
+  ODIN_GUARDRAILS_PATH="${CLI_GUARDRAILS_PATH}" \
+  ODIN_GUARDRAILS_ACK=yes \
+  scripts/odin/odin verify >"${low_verify_out_file}" 2>"${low_verify_err_file}"
+low_verify_rc=$?
+set -e
+if [[ "${low_verify_rc}" -ne 2 ]]; then
+  echo "[mode-confidence] ERROR expected low-confidence verify rc=2, got rc=${low_verify_rc}" >&2
+  cat "${low_verify_out_file}" >&2
+  cat "${low_verify_err_file}" >&2
+  exit 1
+fi
+if ! grep -Fq "BLOCKED mode transition to OPERATE" "${low_verify_err_file}"; then
+  echo "[mode-confidence] ERROR expected blocked mode transition message on low-confidence verify" >&2
+  cat "${low_verify_out_file}" >&2
+  cat "${low_verify_err_file}" >&2
+  exit 1
+fi
+echo "[mode-confidence] PASS low-confidence verify blocked rc=${low_verify_rc}"
+
 run_cli connect claude oauth --confirm >/dev/null
 run_cli tui >/dev/null
 run_cli inbox add "cli task" >/dev/null
