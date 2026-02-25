@@ -70,12 +70,14 @@ class CollectorReadabilityTests(unittest.TestCase):
             (agents_dir / "status.json").write_text(json.dumps({"name": "sm", "role": "sm"}))
             newer = (datetime.now(timezone.utc) - timedelta(minutes=3)).isoformat()
             older = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+            oldest = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
             (odin_dir / "state.json").write_text(
                 json.dumps(
                     {
                         "dispatched_tasks": {
-                            "task-newer": {"agent": "sm", "created_at": newer},
                             "task-older": {"agent": "sm", "created_at": older},
+                            "task-newer": {"agent": "sm", "created_at": newer},
+                            "task-oldest": {"agent": "sm", "created_at": oldest},
                         }
                     }
                 )
