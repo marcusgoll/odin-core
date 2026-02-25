@@ -279,3 +279,58 @@ fn stagehand_denies_command_with_newline_control_separator() {
         }
     );
 }
+
+#[test]
+fn stagehand_allows_quoted_absolute_option_path_within_workspace() {
+    let policy = stagehand_default_policy()
+        .with_enabled(true)
+        .with_commands(["cat"])
+        .with_workspaces(["/home/orchestrator/odin-core"]);
+
+    let decision = policy.evaluate(Action::RunCommand(
+        "cat --input=\"/home/orchestrator/odin-core/README.md\"".to_string(),
+    ));
+
+    assert_eq!(
+        decision,
+        PermissionDecision::Allow {
+            reason_code: "command_allowlisted".to_string()
+        }
+    );
+}
+
+#[test]
+fn stagehand_allows_scalar_option_value_when_workspace_boundaries_active() {
+    let policy = stagehand_default_policy()
+        .with_enabled(true)
+        .with_commands(["cat"])
+        .with_workspaces(["/home/orchestrator/odin-core"]);
+
+    let decision = policy.evaluate(Action::RunCommand("cat --color=always".to_string()));
+
+    assert_eq!(
+        decision,
+        PermissionDecision::Allow {
+            reason_code: "command_allowlisted".to_string()
+        }
+    );
+}
+
+#[test]
+fn stagehand_denies_unresolved_absolute_command_path_fail_closed() {
+    let policy = stagehand_default_policy()
+        .with_enabled(true)
+        .with_commands(["cat"])
+        .with_workspaces(["/home/orchestrator/odin-core"]);
+
+    let decision = policy.evaluate(Action::RunCommand(
+        "cat /home/orchestrator/odin-core/.worktrees/skill-plugin-governance/does-not-exist-4f91de39/secret.txt".to_string(),
+    ));
+
+    assert_eq!(
+        decision,
+        PermissionDecision::Deny {
+            reason_code: "command_path_outside_allowlisted_workspace".to_string()
+        }
+    );
+}

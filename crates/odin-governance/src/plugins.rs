@@ -404,7 +404,7 @@ fn first_absolute_path_outside_workspaces(
 ) -> Option<String> {
     for arg in args {
         if let Some(path) = extract_absolute_path(arg) {
-            let Some(path_obj) = normalize_boundary_path(Path::new(&path)) else {
+            let Some(path_obj) = canonicalize_existing_absolute_path(Path::new(&path)) else {
                 return Some(path);
             };
 
@@ -485,18 +485,24 @@ fn has_relative_parent_segment(token: &str) -> bool {
 fn has_unscoped_relative_path(args: &[String]) -> bool {
     args.iter().any(|arg| {
         let candidate = if let Some((_, value)) = arg.split_once('=') {
-            value.trim()
+            let value = strip_wrapping_quotes(value);
+            let value = value.trim().to_string();
+            if value.is_empty() || !looks_path_like_option_value(&value) {
+                return false;
+            }
+            value
         } else {
             if arg.starts_with('-') {
                 return false;
             }
-            arg.trim()
+            strip_wrapping_quotes(arg).trim().to_string()
         };
+
         if candidate.is_empty() {
             return false;
         }
 
-        !Path::new(candidate).is_absolute()
+        !Path::new(&candidate).is_absolute()
     })
 }
 
@@ -508,6 +514,18 @@ fn normalize_boundary_path(path: &Path) -> Option<PathBuf> {
     }
 
     normalize_lexical_path(path)
+}
+
+fn canonicalize_existing_absolute_path(path: &Path) -> Option<PathBuf> {
+    if !path.is_absolute() {
+        return None;
+    }
+
+    fs::canonicalize(path).ok()
+}
+
+fn looks_path_like_option_value(value: &str) -> bool {
+    value.contains('/') || value.contains('\\') || value.starts_with('.') || Path::new(value).is_absolute()
 }
 
 fn normalize_lexical_path(path: &Path) -> Option<PathBuf> {
