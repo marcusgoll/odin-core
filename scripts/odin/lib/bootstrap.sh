@@ -35,6 +35,17 @@ odin_bootstrap_info() {
   echo "[odin] $*"
 }
 
+odin_bootstrap_now_utc() {
+  date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+odin_bootstrap_print_inbox_normalized_fields() {
+  local title="$1"
+  local timestamp
+  timestamp="$(odin_bootstrap_now_utc)"
+  odin_bootstrap_info "normalized inbox item title=${title} raw_text=${title} source=cli timestamp=${timestamp}"
+}
+
 odin_bootstrap_mode_state_available() {
   declare -F odin_mode_state_init >/dev/null 2>&1
 }
@@ -654,10 +665,12 @@ odin_bootstrap_cmd_inbox_add() {
 
   if odin_bootstrap_has_dry_run "${args[@]}"; then
     odin_bootstrap_info "DRY-RUN inbox add title=${title}"
+    odin_bootstrap_print_inbox_normalized_fields "${title}"
     return 0
   fi
 
   odin_bootstrap_info "inbox add placeholder title=${title}"
+  odin_bootstrap_print_inbox_normalized_fields "${title}"
   if odin_bootstrap_mode_state_require_event "inbox.first_item.verified"; then
     :
   else

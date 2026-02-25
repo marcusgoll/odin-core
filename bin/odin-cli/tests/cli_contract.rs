@@ -36,6 +36,21 @@ fn inbox_add_dry_run_contract() {
 }
 
 #[test]
+fn inbox_add_dry_run_includes_normalized_fields() {
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("odin-cli");
+    cmd.args(["inbox", "add", "bootstrap task", "--dry-run"])
+        .timeout(Duration::from_secs(3));
+
+    cmd.assert()
+        .success()
+        .stdout(contains("normalized inbox item"))
+        .stdout(contains("title=bootstrap task"))
+        .stdout(contains("raw_text=bootstrap task"))
+        .stdout(contains("source=cli"))
+        .stdout(contains("timestamp="));
+}
+
+#[test]
 fn verify_dry_run_contract() {
     assert_dry_run_contract(&["verify", "--dry-run"], "DRY-RUN verify");
 }

@@ -3,6 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -153,6 +154,20 @@ impl GatewaySource {
             Self::Telegram => "telegram",
         }
     }
+}
+
+fn now_unix_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
+fn print_inbox_normalized_fields(title: &str) {
+    let timestamp = now_unix_timestamp();
+    println!(
+        "normalized inbox item title={title} raw_text={title} source=cli timestamp={timestamp}"
+    );
 }
 
 fn sample_action_request() -> ActionRequest {
@@ -361,8 +376,10 @@ fn handle_bootstrap_command(command: CliCommand) -> anyhow::Result<()> {
             } => {
                 if dry_run {
                     println!("DRY-RUN inbox add title={title}");
+                    print_inbox_normalized_fields(&title);
                 } else {
                     println!("inbox add placeholder title={title}");
+                    print_inbox_normalized_fields(&title);
                 }
                 Ok(())
             }
