@@ -30,6 +30,19 @@ scripts/odin/odin verify --dry-run
 
 Conservative default: if `config/guardrails.yaml` is missing, mutating commands are blocked unless `--dry-run` is used.
 
+## Bootstrap docs (executable)
+
+- CLI quickstart: `docs/quickstart.md`
+- n8n adapter (optional): `docs/integrations/n8n.md`
+- Slack adapter (optional): `docs/integrations/slack.md`
+- Telegram adapter (optional): `docs/integrations/telegram.md`
+
+Smoke check for documented commands:
+
+```bash
+bash scripts/verify/docs-command-smoke.sh
+```
+
 ## TUI Dashboard
 
 Install dependency once:
