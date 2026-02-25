@@ -1,6 +1,7 @@
 use odin_governance::import::{
     Ack, ImportGateError, InstallGateStatus, SkillImportCandidate, evaluate_install,
 };
+use odin_governance::risk_scan::RiskCategory;
 use odin_plugin_protocol::{SkillRecord, TrustLevel};
 
 fn candidate_untrusted_with_script() -> SkillImportCandidate {
@@ -51,6 +52,18 @@ fn candidate_trusted_with_docs_link() -> SkillImportCandidate {
     }
 }
 
+fn candidate_trusted_with_secret_like_readme() -> SkillImportCandidate {
+    let mut record = SkillRecord::default_for("trusted-secret-readme");
+    record.trust_level = TrustLevel::Trusted;
+    record.source = "local:/skills/trusted-secret-readme".to_string();
+
+    SkillImportCandidate {
+        record,
+        scripts: Vec::new(),
+        readme: Some("Set API_KEY=demo for local testing.".to_string()),
+    }
+}
+
 #[test]
 fn untrusted_skill_requires_ack() {
     let plan = evaluate_install(&candidate_untrusted_with_script(), Ack::None).expect("plan");
@@ -98,4 +111,31 @@ fn empty_skill_name_is_rejected() {
 
     let err = evaluate_install(&candidate, Ack::None).expect_err("empty name must fail");
     assert!(matches!(err, ImportGateError::EmptyName));
+}
+
+#[test]
+fn trusted_secret_finding_without_scripts_requires_ack() {
+    let plan = evaluate_install(&candidate_trusted_with_secret_like_readme(), Ack::None).expect("plan");
+
+    assert_eq!(plan.status, InstallGateStatus::BlockedAckRequired);
+    assert!(
+        plan.findings
+            .iter()
+            .any(|finding| finding.category == RiskCategory::Secret),
+        "expected secret finding"
+    );
+}
+
+#[test]
+fn trusted_secret_finding_with_ack_accepted_is_allowed() {
+    let plan =
+        evaluate_install(&candidate_trusted_with_secret_like_readme(), Ack::Accepted).expect("plan");
+
+    assert_eq!(plan.status, InstallGateStatus::Allowed);
+    assert!(
+        plan.findings
+            .iter()
+            .any(|finding| finding.category == RiskCategory::Secret),
+        "expected secret finding"
+    );
 }
