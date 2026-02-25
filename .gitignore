@@ -4,3 +4,7 @@
 *.log
 /state
 /logs
+
+# Python cache
+__pycache__/
+*.pyc
