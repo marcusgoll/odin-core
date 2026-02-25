@@ -69,3 +69,70 @@ fn collect_matches(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{RiskCategory, scan_skill_content};
+
+    #[test]
+    fn scanner_detects_shell_findings() {
+        let scripts = vec!["#!/usr/bin/env bash\nbash -c 'echo hi'".to_string()];
+
+        let findings = scan_skill_content(&scripts, None);
+
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.category == RiskCategory::Shell),
+            "expected shell finding"
+        );
+    }
+
+    #[test]
+    fn scanner_detects_network_findings() {
+        let scripts = vec!["#!/usr/bin/env bash\nwget https://example.com/install.sh".to_string()];
+
+        let findings = scan_skill_content(&scripts, None);
+
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.category == RiskCategory::Network),
+            "expected network finding"
+        );
+    }
+
+    #[test]
+    fn scanner_detects_delete_findings() {
+        let scripts = vec!["#!/usr/bin/env bash\nrm -rf ./tmp/cache".to_string()];
+
+        let findings = scan_skill_content(&scripts, None);
+
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.category == RiskCategory::Delete),
+            "expected delete finding"
+        );
+    }
+
+    #[test]
+    fn scanner_deduplicates_identical_findings_per_source() {
+        let scripts = vec![
+            "#!/usr/bin/env bash\nwget https://example.com/a\nwget https://example.com/b".to_string(),
+        ];
+
+        let findings = scan_skill_content(&scripts, None);
+        let network_wget_matches = findings
+            .iter()
+            .filter(|finding| {
+                finding.category == RiskCategory::Network && finding.pattern == "wget "
+            })
+            .count();
+
+        assert_eq!(
+            network_wget_matches, 1,
+            "expected a single deduplicated finding for repeated wget pattern"
+        );
+    }
+}
