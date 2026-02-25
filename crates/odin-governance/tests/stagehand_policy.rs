@@ -3,6 +3,8 @@ use odin_governance::plugins::{
     stagehand_with_domains,
 };
 use odin_plugin_protocol::{DelegationCapability, PluginPermissionEnvelope, TrustLevel};
+use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn stagehand_denies_login_by_default() {
@@ -281,14 +283,23 @@ fn stagehand_denies_command_with_newline_control_separator() {
 }
 
 #[test]
-fn stagehand_allows_quoted_absolute_option_path_within_workspace() {
+fn stagehand_allows_absolute_option_path_within_workspace() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let workspace = std::env::temp_dir().join(format!("odin-stagehand-allow-{unique}"));
+    let file = workspace.join("input.txt");
+    fs::create_dir_all(&workspace).expect("create workspace");
+    fs::write(&file, "fixture").expect("write fixture");
+
     let policy = stagehand_default_policy()
         .with_enabled(true)
         .with_commands(["cat"])
-        .with_workspaces(["/home/orchestrator/odin-core"]);
+        .with_workspaces([workspace.to_string_lossy().to_string()]);
 
     let decision = policy.evaluate(Action::RunCommand(
-        "cat --input=\"/home/orchestrator/odin-core/README.md\"".to_string(),
+        format!("cat --input={}", file.to_string_lossy()),
     ));
 
     assert_eq!(
@@ -297,6 +308,8 @@ fn stagehand_allows_quoted_absolute_option_path_within_workspace() {
             reason_code: "command_allowlisted".to_string()
         }
     );
+
+    fs::remove_dir_all(&workspace).expect("cleanup workspace");
 }
 
 #[test]
@@ -348,7 +361,7 @@ fn stagehand_denies_quoted_parent_traversal_option_value_without_workspace_polic
     assert_eq!(
         decision,
         PermissionDecision::Deny {
-            reason_code: "command_relative_path_traversal".to_string()
+            reason_code: "command_unsafe_shell_syntax".to_string()
         }
     );
 }

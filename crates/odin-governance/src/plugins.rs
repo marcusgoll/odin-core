@@ -459,7 +459,7 @@ fn has_unsafe_shell_syntax(command: &str) -> bool {
     command.chars().any(|ch| {
         matches!(
             ch,
-            ';' | '|' | '&' | '>' | '<' | '`' | '$' | '(' | ')' | '\n' | '\r'
+            ';' | '|' | '&' | '>' | '<' | '`' | '$' | '(' | ')' | '\n' | '\r' | '\'' | '"'
         )
     })
 }
