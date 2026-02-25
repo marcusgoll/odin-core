@@ -2,9 +2,9 @@
 
 ## Phase 0: Baseline inventory and lock
 
-- [ ] Pin baseline commit in `cfipros` for `scripts/odin`.
-- [ ] Snapshot behavior contracts and test baselines.
-- [ ] Capture current critical file map:
+- [x] Pin baseline commit in `cfipros` for `scripts/odin`.
+- [x] Snapshot behavior contracts and test baselines.
+- [x] Capture current critical file map:
   - `/home/orchestrator/cfipros/scripts/odin/odin-service.sh`
   - `/home/orchestrator/cfipros/scripts/odin/keepalive.sh`
   - `/home/orchestrator/cfipros/scripts/odin/odin-inbox-write.sh`
@@ -15,6 +15,11 @@
   - `/home/orchestrator/cfipros/scripts/odin/lib/orchestrator-failover.sh`
   - `/home/orchestrator/cfipros/scripts/odin/lib/telegram.sh`
   - `/home/orchestrator/cfipros/scripts/odin/lib/browser-access.sh`
+
+Baseline artifacts:
+- `/home/orchestrator/odin-core/docs/baselines/cfipros-odin-baseline.md`
+- `/home/orchestrator/odin-core/docs/baselines/compat-regression-matrix.md`
+- `/home/orchestrator/odin-core/scripts/verify/compat-regression.sh`
 
 ## Phase 1: Interface extraction
 
@@ -32,14 +37,14 @@
 - [x] Move project-specific automations from keepalive into private plugin package.
 - [x] Move private approvals/risk rules into private policy pack.
 - [x] Keep `runtime.mode=compat` and verify no behavior regressions.
-- [ ] Use `docs/phase2-keepalive-carveout.md` mapping to extract provider-specific sections:
+- [x] Use `docs/phase2-keepalive-carveout.md` mapping to extract provider-specific sections:
   - [x] legacy Sentry poll/task dispatch block
   - [x] legacy PR health poll/auto-update block
-- [ ] Bootstrap downstream private plugin from:
+- [x] Bootstrap downstream private plugin from:
   - [x] `examples/private-plugins/ops-watchdog/odin.plugin.yaml`
   - [x] `examples/private-plugins/ops-watchdog/bin/plugin`
   - [x] `examples/private-plugins/ops-watchdog/config/config.example.yaml`
-- [ ] Apply private policy grants from:
+- [x] Apply private policy grants from:
   - [x] `policy/private-ops-watchdog.example.yaml`
 
 ## Phase 3: OSS quickstart and demo plugin
