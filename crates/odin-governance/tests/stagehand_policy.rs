@@ -430,3 +430,41 @@ fn stagehand_denies_attached_short_option_absolute_path_outside_workspace() {
     fs::remove_dir_all(&allowed_workspace).expect("cleanup allowed workspace");
     fs::remove_dir_all(&outside_workspace).expect("cleanup outside workspace");
 }
+
+#[test]
+fn stagehand_denies_command_when_workspace_policy_missing() {
+    let policy = stagehand_default_policy()
+        .with_enabled(true)
+        .with_commands(["cat"]);
+
+    let decision = policy.evaluate(Action::RunCommand("cat always".to_string()));
+
+    assert_eq!(
+        decision,
+        PermissionDecision::Deny {
+            reason_code: "command_workspace_policy_missing".to_string()
+        }
+    );
+}
+
+#[test]
+fn stagehand_trusted_envelope_requires_explicit_enable_capability() {
+    let envelope = PluginPermissionEnvelope {
+        plugin: "stagehand".to_string(),
+        trust_level: TrustLevel::Trusted,
+        permissions: vec![DelegationCapability {
+            id: "browser.observe".to_string(),
+            scope: vec!["example.com".to_string()],
+        }],
+    };
+
+    let policy = stagehand_policy_from_envelope(&envelope);
+    let decision = policy.evaluate(Action::ObserveUrl("https://example.com".to_string()));
+
+    assert_eq!(
+        decision,
+        PermissionDecision::Deny {
+            reason_code: "plugin_disabled".to_string()
+        }
+    );
+}

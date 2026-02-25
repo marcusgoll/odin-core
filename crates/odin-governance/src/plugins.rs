@@ -165,6 +165,10 @@ impl StagehandPolicy {
             return deny("command_not_allowlisted");
         }
 
+        if self.allowed_workspaces.is_empty() {
+            return deny("command_workspace_policy_missing");
+        }
+
         if has_relative_parent_traversal(&args) {
             return deny("command_relative_path_traversal");
         }
@@ -244,7 +248,7 @@ where
 
 pub fn stagehand_policy_from_envelope(envelope: &PluginPermissionEnvelope) -> StagehandPolicy {
     let can_enable = envelope.trust_level != TrustLevel::Untrusted;
-    let mut policy = stagehand_default_policy().with_enabled(can_enable);
+    let mut policy = stagehand_default_policy();
 
     for permission in &envelope.permissions {
         apply_permission_scope(&mut policy, permission, can_enable);
@@ -674,10 +678,16 @@ mod tests {
         registry.insert(PluginPermissionEnvelope {
             plugin: "stagehand".to_string(),
             trust_level: TrustLevel::Trusted,
-            permissions: vec![DelegationCapability {
-                id: "browser.observe".to_string(),
-                scope: vec!["example.com".to_string()],
-            }],
+            permissions: vec![
+                DelegationCapability {
+                    id: "stagehand.enabled".to_string(),
+                    scope: vec![],
+                },
+                DelegationCapability {
+                    id: "browser.observe".to_string(),
+                    scope: vec!["example.com".to_string()],
+                },
+            ],
         });
 
         let decision = registry
@@ -687,6 +697,26 @@ mod tests {
             decision,
             PermissionDecision::Allow {
                 reason_code: "domain_allowlisted".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn trusted_envelope_without_enable_capability_stays_disabled() {
+        let policy = stagehand_policy_from_envelope(&PluginPermissionEnvelope {
+            plugin: "stagehand".to_string(),
+            trust_level: TrustLevel::Trusted,
+            permissions: vec![DelegationCapability {
+                id: "browser.observe".to_string(),
+                scope: vec!["example.com".to_string()],
+            }],
+        });
+
+        let decision = policy.evaluate(Action::ObserveUrl("https://example.com".to_string()));
+        assert_eq!(
+            decision,
+            PermissionDecision::Deny {
+                reason_code: "plugin_disabled".to_string()
             }
         );
     }
