@@ -39,16 +39,18 @@ odin_bootstrap_mode_state_available() {
 }
 
 odin_bootstrap_mode_state_init() {
-  if odin_bootstrap_mode_state_available; then
-    odin_mode_state_init >/dev/null 2>&1 || true
+  if ! odin_bootstrap_mode_state_available; then
+    return 0
   fi
+  odin_mode_state_init >/dev/null 2>&1
 }
 
 odin_bootstrap_mode_state_record_event() {
   local event="$1"
-  if odin_bootstrap_mode_state_available; then
-    odin_mode_state_record_event "${event}" >/dev/null 2>&1 || true
+  if ! odin_bootstrap_mode_state_available; then
+    return 0
   fi
+  odin_mode_state_record_event "${event}" >/dev/null 2>&1
 }
 
 odin_bootstrap_mode_state_set_mode_if_allowed() {
@@ -57,6 +59,39 @@ odin_bootstrap_mode_state_set_mode_if_allowed() {
     return 1
   fi
   odin_mode_state_set_mode "${mode}" >/dev/null 2>&1
+}
+
+odin_bootstrap_mode_state_require_init() {
+  if odin_bootstrap_mode_state_init; then
+    return 0
+  fi
+  odin_bootstrap_err "mode state initialization failed"
+  return 70
+}
+
+odin_bootstrap_mode_state_require_event() {
+  local event="$1"
+  if odin_bootstrap_mode_state_record_event "${event}"; then
+    return 0
+  fi
+  odin_bootstrap_err "mode state update failed for event '${event}'"
+  return 70
+}
+
+odin_bootstrap_mode_state_require_mode() {
+  local mode="$1"
+  if odin_bootstrap_mode_state_set_mode_if_allowed "${mode}"; then
+    return 0
+  fi
+
+  local rc=$?
+  if [[ "${rc}" -eq 2 ]]; then
+    odin_bootstrap_err "BLOCKED mode transition to ${mode}: confidence/guardrails/task-cycle gate not satisfied."
+    return 2
+  fi
+
+  odin_bootstrap_err "mode transition to ${mode} failed"
+  return 70
 }
 
 odin_bootstrap_has_flag() {
@@ -464,7 +499,13 @@ odin_bootstrap_require_guardrails_or_dry_run() {
     return 2
   fi
 
-  odin_bootstrap_mode_state_record_event "guardrails.acknowledged.verified"
+  if odin_bootstrap_mode_state_require_event "guardrails.acknowledged.verified"; then
+    :
+  else
+    local rc=$?
+    return "${rc}"
+  fi
+
   return 0
 }
 
@@ -499,7 +540,12 @@ odin_bootstrap_cmd_connect() {
   fi
 
   odin_bootstrap_info "connect placeholder provider=${provider} auth=${auth_mode}"
-  odin_bootstrap_mode_state_record_event "provider.connected.verified"
+  if odin_bootstrap_mode_state_require_event "provider.connected.verified"; then
+    :
+  else
+    local rc=$?
+    return "${rc}"
+  fi
 }
 
 odin_bootstrap_cmd_start() {
@@ -548,7 +594,12 @@ odin_bootstrap_cmd_tui() {
   fi
 
   odin_bootstrap_info "tui placeholder"
-  odin_bootstrap_mode_state_record_event "tui.opened.verified"
+  if odin_bootstrap_mode_state_require_event "tui.opened.verified"; then
+    :
+  else
+    local rc=$?
+    return "${rc}"
+  fi
 }
 
 odin_bootstrap_cmd_inbox_add() {
@@ -576,7 +627,12 @@ odin_bootstrap_cmd_inbox_add() {
   fi
 
   odin_bootstrap_info "inbox add placeholder title=${title}"
-  odin_bootstrap_mode_state_record_event "inbox.first_item.verified"
+  if odin_bootstrap_mode_state_require_event "inbox.first_item.verified"; then
+    :
+  else
+    local rc=$?
+    return "${rc}"
+  fi
 }
 
 odin_bootstrap_cmd_inbox_list() {
@@ -659,22 +715,46 @@ odin_bootstrap_cmd_verify() {
   fi
 
   if ! odin_bootstrap_guardrails_available; then
-    odin_bootstrap_mode_state_record_event "verify.failed"
+    if odin_bootstrap_mode_state_require_event "verify.failed"; then
+      :
+    else
+      local rc=$?
+      return "${rc}"
+    fi
     odin_bootstrap_err "verify failed: guardrails file not found at $(odin_bootstrap_guardrails_path); mode set to RECOVERY."
     return 2
   fi
 
   if ! odin_bootstrap_guardrails_acknowledged; then
-    odin_bootstrap_mode_state_record_event "verify.failed"
+    if odin_bootstrap_mode_state_require_event "verify.failed"; then
+      :
+    else
+      local rc=$?
+      return "${rc}"
+    fi
     odin_bootstrap_err "verify failed: acknowledgement required; mode set to RECOVERY."
     return 2
   fi
 
-  odin_bootstrap_mode_state_record_event "verify.passed.verified"
-  if odin_bootstrap_mode_state_set_mode_if_allowed "OPERATE"; then
-    odin_bootstrap_info "verify placeholder guardrails=present mode=OPERATE"
+  if odin_bootstrap_mode_state_require_event "task.cycle.verified"; then
+    :
   else
-    odin_bootstrap_info "verify placeholder guardrails=present mode=BOOTSTRAP"
+    local rc=$?
+    return "${rc}"
+  fi
+
+  if odin_bootstrap_mode_state_require_event "verify.passed.verified"; then
+    :
+  else
+    local rc=$?
+    return "${rc}"
+  fi
+
+  if odin_bootstrap_mode_state_require_mode "OPERATE"; then
+    odin_bootstrap_info "verify placeholder guardrails=present mode=OPERATE task_cycle=verified"
+  else
+    local rc=$?
+    return "${rc}"
   fi
 }
 
@@ -713,8 +793,15 @@ odin_bootstrap_dispatch() {
     esac
   done
 
-  odin_bootstrap_mode_state_init
   local command="${1:-help}"
+  if [[ "${command}" != "help" && "${command}" != "-h" && "${command}" != "--help" ]]; then
+    if odin_bootstrap_mode_state_require_init; then
+      :
+    else
+      local rc=$?
+      return "${rc}"
+    fi
+  fi
 
   case "${command}" in
     help|-h|--help)

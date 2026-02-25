@@ -5,11 +5,23 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
 TMP_DIR="$(mktemp -d /tmp/odin-mode-confidence.XXXXXX)"
 STATE_PATH="${TMP_DIR}/bootstrap-state.json"
+CLI_STATE_PATH="${TMP_DIR}/cli-bootstrap-state.json"
+CLI_GUARDRAILS_PATH="${TMP_DIR}/guardrails.yaml"
+READONLY_STATE_DIR="${TMP_DIR}/readonly-state-dir"
 
 cleanup() {
   rm -rf "${TMP_DIR}"
 }
 trap cleanup EXIT
+
+cat >"${CLI_GUARDRAILS_PATH}" <<'EOF'
+denylist: []
+confirm_required:
+  - integration
+EOF
+
+mkdir -p "${READONLY_STATE_DIR}"
+chmod 500 "${READONLY_STATE_DIR}"
 
 assert_eq() {
   local label="$1"
@@ -87,5 +99,66 @@ persisted_mode="$(
   ' _ "${ROOT_DIR}/scripts/odin/lib/mode_state.sh" "${STATE_PATH}"
 )"
 assert_eq "state persists on disk" "RECOVERY" "${persisted_mode}"
+
+run_cli() {
+  env \
+    ODIN_MODE_STATE_PATH="${CLI_STATE_PATH}" \
+    ODIN_GUARDRAILS_PATH="${CLI_GUARDRAILS_PATH}" \
+    ODIN_GUARDRAILS_ACK=yes \
+    scripts/odin/odin "$@"
+}
+
+echo "[mode-confidence] RUN cli path connect+tui+inbox+verify"
+run_cli connect claude oauth --confirm >/dev/null
+run_cli tui >/dev/null
+run_cli inbox add "cli task" >/dev/null
+
+export ODIN_MODE_STATE_PATH="${CLI_STATE_PATH}"
+assert_blocked "cli can_operate before verify task cycle" odin_mode_state_can_operate
+run_cli verify >/dev/null
+
+assert_eq "cli mode transitions to OPERATE" "OPERATE" "$(odin_mode_state_get mode)"
+assert_eq "cli task cycle marked" "true" "$(odin_mode_state_get task_cycle_verified)"
+cli_confidence="$(odin_mode_state_get confidence)"
+if (( cli_confidence < 60 )); then
+  echo "[mode-confidence] ERROR expected cli confidence >= 60, got ${cli_confidence}" >&2
+  exit 1
+fi
+echo "[mode-confidence] PASS cli confidence=${cli_confidence}"
+
+echo "[mode-confidence] RUN state write failure propagation"
+readonly_state_path="${READONLY_STATE_DIR}/state.json"
+readonly_err_file="$(mktemp "${TMP_DIR}/readonly.err.XXXXXX")"
+readonly_out_file="$(mktemp "${TMP_DIR}/readonly.out.XXXXXX")"
+set +e
+env \
+  ODIN_MODE_STATE_PATH="${readonly_state_path}" \
+  ODIN_GUARDRAILS_PATH="${CLI_GUARDRAILS_PATH}" \
+  ODIN_GUARDRAILS_ACK=yes \
+  scripts/odin/odin connect claude oauth --confirm >"${readonly_out_file}" 2>"${readonly_err_file}"
+readonly_rc=$?
+set -e
+if [[ "${readonly_rc}" -eq 0 ]]; then
+  echo "[mode-confidence] ERROR expected non-zero rc when state cannot be written" >&2
+  cat "${readonly_out_file}" >&2
+  cat "${readonly_err_file}" >&2
+  exit 1
+fi
+if ! grep -Eiq "mode state|state.*failed|failed.*state" "${readonly_err_file}"; then
+  echo "[mode-confidence] ERROR expected state failure message in stderr" >&2
+  cat "${readonly_out_file}" >&2
+  cat "${readonly_err_file}" >&2
+  exit 1
+fi
+echo "[mode-confidence] PASS state failure surfaced rc=${readonly_rc}"
+
+echo "[mode-confidence] RUN help command should not initialize mode state"
+help_state_path="${TMP_DIR}/help-state.json"
+env ODIN_MODE_STATE_PATH="${help_state_path}" scripts/odin/odin help >/dev/null
+if [[ -f "${help_state_path}" ]]; then
+  echo "[mode-confidence] ERROR help unexpectedly initialized mode state file" >&2
+  exit 1
+fi
+echo "[mode-confidence] PASS help does not initialize mode state"
 
 echo "[mode-confidence] COMPLETE"

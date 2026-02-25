@@ -12,6 +12,7 @@
 ODIN_MODE_STATE_DEFAULT_PATH="${ODIN_MODE_STATE_DEFAULT_PATH:-/var/odin/bootstrap-state.json}"
 ODIN_MODE_STATE_FALLBACK_PATH="${ODIN_MODE_STATE_FALLBACK_PATH:-/tmp/odin/bootstrap-state.json}"
 ODIN_MODE_STATE_RESOLVED_PATH="${ODIN_MODE_STATE_RESOLVED_PATH:-}"
+ODIN_MODE_STATE_LOCK_MAX_WAIT_MS="${ODIN_MODE_STATE_LOCK_MAX_WAIT_MS:-5000}"
 
 _ODIN_MODE_STATE_MODE="BOOTSTRAP"
 _ODIN_MODE_STATE_CONFIDENCE=10
@@ -19,6 +20,51 @@ _ODIN_MODE_STATE_GUARDRAILS_ACK="false"
 _ODIN_MODE_STATE_TASK_CYCLE="false"
 _ODIN_MODE_STATE_LAST_VERIFY="true"
 _ODIN_MODE_STATE_RECORDED_EVENTS=""
+
+_odin_mode_state_err() {
+  echo "[odin] ERROR: mode state: $*" >&2
+}
+
+_odin_mode_state_with_lock() {
+  local path="$1"
+  shift
+  local lock_path="${path}.lock"
+
+  if command -v flock >/dev/null 2>&1; then
+    local lock_fd
+    if ! exec {lock_fd}>"${lock_path}"; then
+      _odin_mode_state_err "unable to open lock file ${lock_path}"
+      return 1
+    fi
+    if ! flock -x "${lock_fd}"; then
+      _odin_mode_state_err "unable to acquire lock ${lock_path}"
+      eval "exec ${lock_fd}>&-"
+      return 1
+    fi
+
+    "$@"
+    local rc=$?
+    flock -u "${lock_fd}" || true
+    eval "exec ${lock_fd}>&-"
+    return "${rc}"
+  fi
+
+  local lock_dir="${lock_path}.d"
+  local waited_ms=0
+  while ! mkdir "${lock_dir}" 2>/dev/null; do
+    sleep 0.05
+    waited_ms=$((waited_ms + 50))
+    if (( waited_ms >= ODIN_MODE_STATE_LOCK_MAX_WAIT_MS )); then
+      _odin_mode_state_err "timed out acquiring lock ${lock_dir}"
+      return 1
+    fi
+  done
+
+  "$@"
+  local rc=$?
+  rmdir "${lock_dir}" 2>/dev/null || true
+  return "${rc}"
+}
 
 odin_mode_state_path() {
   if [[ -n "${ODIN_MODE_STATE_PATH:-}" ]]; then
@@ -35,7 +81,10 @@ odin_mode_state_path() {
     ODIN_MODE_STATE_RESOLVED_PATH="${ODIN_MODE_STATE_DEFAULT_PATH}"
   else
     ODIN_MODE_STATE_RESOLVED_PATH="${ODIN_MODE_STATE_FALLBACK_PATH}"
-    mkdir -p "$(dirname "${ODIN_MODE_STATE_RESOLVED_PATH}")" 2>/dev/null || true
+    if ! mkdir -p "$(dirname "${ODIN_MODE_STATE_RESOLVED_PATH}")" 2>/dev/null; then
+      _odin_mode_state_err "unable to create state directory for ${ODIN_MODE_STATE_RESOLVED_PATH}"
+      return 1
+    fi
   fi
 
   echo "${ODIN_MODE_STATE_RESOLVED_PATH}"
@@ -147,9 +196,12 @@ _odin_mode_state_load() {
 _odin_mode_state_write() {
   local path="$1"
   local tmp_path="${path}.tmp.$$"
-  mkdir -p "$(dirname "${path}")"
+  if ! mkdir -p "$(dirname "${path}")"; then
+    _odin_mode_state_err "unable to create state directory for ${path}"
+    return 1
+  fi
 
-  cat >"${tmp_path}" <<EOF
+  if ! cat >"${tmp_path}" <<EOF
 {
   "mode": "${_ODIN_MODE_STATE_MODE}",
   "confidence": ${_ODIN_MODE_STATE_CONFIDENCE},
@@ -159,8 +211,17 @@ _odin_mode_state_write() {
   "recorded_events": "${_ODIN_MODE_STATE_RECORDED_EVENTS}"
 }
 EOF
+  then
+    rm -f "${tmp_path}" 2>/dev/null || true
+    _odin_mode_state_err "unable to write temporary state file ${tmp_path}"
+    return 1
+  fi
 
-  mv "${tmp_path}" "${path}"
+  if ! mv "${tmp_path}" "${path}"; then
+    rm -f "${tmp_path}" 2>/dev/null || true
+    _odin_mode_state_err "unable to move temporary state file into ${path}"
+    return 1
+  fi
 }
 
 _odin_mode_state_event_seen() {
@@ -185,9 +246,8 @@ _odin_mode_state_event_append() {
   fi
 }
 
-odin_mode_state_init() {
-  local path
-  path="$(odin_mode_state_path)"
+_odin_mode_state_init_unlocked() {
+  local path="$1"
   if _odin_mode_state_load "${path}"; then
     return 0
   fi
@@ -196,12 +256,18 @@ odin_mode_state_init() {
   _odin_mode_state_write "${path}"
 }
 
+odin_mode_state_init() {
+  local path
+  path="$(odin_mode_state_path)" || return 1
+  _odin_mode_state_with_lock "${path}" _odin_mode_state_init_unlocked "${path}"
+}
+
 odin_mode_state_get() {
   local field="$1"
   local path
-  path="$(odin_mode_state_path)"
-  odin_mode_state_init >/dev/null
-  _odin_mode_state_load "${path}" >/dev/null
+  path="$(odin_mode_state_path)" || return 1
+  odin_mode_state_init >/dev/null || return 1
+  _odin_mode_state_load "${path}" >/dev/null || return 1
 
   case "${field}" in
     mode)
@@ -228,12 +294,11 @@ odin_mode_state_get() {
   esac
 }
 
-odin_mode_state_record_event() {
-  local event="$1"
-  local path
-  path="$(odin_mode_state_path)"
-  odin_mode_state_init >/dev/null
-  _odin_mode_state_load "${path}" >/dev/null
+_odin_mode_state_record_event_unlocked() {
+  local path="$1"
+  local event="$2"
+  _odin_mode_state_init_unlocked "${path}" || return 1
+  _odin_mode_state_load "${path}" >/dev/null || return 1
 
   local points=0
   case "${event}" in
@@ -280,12 +345,14 @@ odin_mode_state_record_event() {
   _odin_mode_state_write "${path}"
 }
 
-odin_mode_state_can_operate() {
+odin_mode_state_record_event() {
+  local event="$1"
   local path
-  path="$(odin_mode_state_path)"
-  odin_mode_state_init >/dev/null
-  _odin_mode_state_load "${path}" >/dev/null
+  path="$(odin_mode_state_path)" || return 1
+  _odin_mode_state_with_lock "${path}" _odin_mode_state_record_event_unlocked "${path}" "${event}"
+}
 
+_odin_mode_state_can_operate_in_memory() {
   if [[ "${_ODIN_MODE_STATE_MODE}" == "RECOVERY" ]]; then
     return 1
   fi
@@ -304,21 +371,35 @@ odin_mode_state_can_operate() {
   return 0
 }
 
-odin_mode_state_set_mode() {
-  local next_mode="$1"
+odin_mode_state_can_operate() {
   local path
-  path="$(odin_mode_state_path)"
-  odin_mode_state_init >/dev/null
-  _odin_mode_state_load "${path}" >/dev/null
+  path="$(odin_mode_state_path)" || return 1
+  odin_mode_state_init >/dev/null || return 1
+  _odin_mode_state_load "${path}" >/dev/null || return 1
+  _odin_mode_state_can_operate_in_memory
+}
+
+_odin_mode_state_set_mode_unlocked() {
+  local path="$1"
+  local next_mode="$2"
+  _odin_mode_state_init_unlocked "${path}" || return 1
+  _odin_mode_state_load "${path}" >/dev/null || return 1
 
   _odin_mode_state_validate_mode "${next_mode}" || return 64
 
   if [[ "${next_mode}" == "OPERATE" ]]; then
-    if ! odin_mode_state_can_operate; then
+    if ! _odin_mode_state_can_operate_in_memory; then
       return 2
     fi
   fi
 
   _ODIN_MODE_STATE_MODE="${next_mode}"
   _odin_mode_state_write "${path}"
+}
+
+odin_mode_state_set_mode() {
+  local next_mode="$1"
+  local path
+  path="$(odin_mode_state_path)" || return 1
+  _odin_mode_state_with_lock "${path}" _odin_mode_state_set_mode_unlocked "${path}" "${next_mode}"
 }
