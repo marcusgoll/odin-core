@@ -1,9 +1,10 @@
+use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use clap::{Parser, Subcommand, ValueEnum};
 use odin_audit::NoopAuditSink;
 use odin_compat_bash::{
@@ -23,6 +24,19 @@ struct CliConfig {
     plugins_root: PathBuf,
     task_file: Option<PathBuf>,
     run_once: bool,
+}
+
+impl Default for CliConfig {
+    fn default() -> Self {
+        Self {
+            config_path: "config/default.yaml".to_string(),
+            legacy_root: None,
+            legacy_odin_dir: PathBuf::from("/var/odin"),
+            plugins_root: PathBuf::from("examples/private-plugins"),
+            task_file: None,
+            run_once: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Parser)]
@@ -166,7 +180,137 @@ impl TaskIngress for StdoutTaskIngress {
     }
 }
 
-fn handle_bootstrap_command(command: CliCommand) {
+fn parse_legacy_cli_config(raw_args: &[String]) -> CliConfig {
+    let mut cfg = CliConfig::default();
+    let mut idx = 0usize;
+
+    while idx < raw_args.len() {
+        let arg = raw_args[idx].as_str();
+        match arg {
+            "--config" => {
+                if let Some(path) = raw_args.get(idx + 1) {
+                    cfg.config_path = path.clone();
+                    idx += 2;
+                    continue;
+                }
+            }
+            "--legacy-root" => {
+                if let Some(path) = raw_args.get(idx + 1) {
+                    cfg.legacy_root = Some(PathBuf::from(path));
+                    idx += 2;
+                    continue;
+                }
+            }
+            "--legacy-odin-dir" => {
+                if let Some(path) = raw_args.get(idx + 1) {
+                    cfg.legacy_odin_dir = PathBuf::from(path);
+                    idx += 2;
+                    continue;
+                }
+            }
+            "--plugins-root" => {
+                if let Some(path) = raw_args.get(idx + 1) {
+                    cfg.plugins_root = PathBuf::from(path);
+                    idx += 2;
+                    continue;
+                }
+            }
+            "--task-file" => {
+                if let Some(path) = raw_args.get(idx + 1) {
+                    cfg.task_file = Some(PathBuf::from(path));
+                    idx += 2;
+                    continue;
+                }
+            }
+            "--run-once" => {
+                cfg.run_once = true;
+                idx += 1;
+                continue;
+            }
+            _ => {}
+        }
+
+        if let Some(path) = arg.strip_prefix("--config=") {
+            if !path.is_empty() {
+                cfg.config_path = path.to_string();
+            }
+        } else if let Some(path) = arg.strip_prefix("--legacy-root=") {
+            if !path.is_empty() {
+                cfg.legacy_root = Some(PathBuf::from(path));
+            }
+        } else if let Some(path) = arg.strip_prefix("--legacy-odin-dir=") {
+            if !path.is_empty() {
+                cfg.legacy_odin_dir = PathBuf::from(path);
+            }
+        } else if let Some(path) = arg.strip_prefix("--plugins-root=") {
+            if !path.is_empty() {
+                cfg.plugins_root = PathBuf::from(path);
+            }
+        } else if let Some(path) = arg.strip_prefix("--task-file=") {
+            if !path.is_empty() {
+                cfg.task_file = Some(PathBuf::from(path));
+            }
+        }
+
+        idx += 1;
+    }
+
+    cfg
+}
+
+fn parse_error_targets_native_contract(raw_args: &[String]) -> bool {
+    let mut idx = 0usize;
+    while idx < raw_args.len() {
+        let arg = raw_args[idx].as_str();
+        match arg {
+            "--config" | "--legacy-root" | "--legacy-odin-dir" | "--plugins-root"
+            | "--task-file" => {
+                idx += 2;
+                continue;
+            }
+            "--run-once" | "--help" | "-h" => {
+                idx += 1;
+                continue;
+            }
+            "--" => {
+                idx += 1;
+                break;
+            }
+            _ => {}
+        }
+
+        if arg.starts_with("--config=")
+            || arg.starts_with("--legacy-root=")
+            || arg.starts_with("--legacy-odin-dir=")
+            || arg.starts_with("--plugins-root=")
+            || arg.starts_with("--task-file=")
+        {
+            idx += 1;
+            continue;
+        }
+
+        if arg.starts_with('-') {
+            idx += 1;
+            continue;
+        }
+
+        return matches!(
+            arg,
+            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify"
+        );
+    }
+
+    if let Some(token) = raw_args.get(idx).map(String::as_str) {
+        return matches!(
+            token,
+            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify"
+        );
+    }
+
+    false
+}
+
+fn handle_bootstrap_command(command: CliCommand) -> anyhow::Result<()> {
     match command {
         CliCommand::Connect {
             provider,
@@ -185,6 +329,7 @@ fn handle_bootstrap_command(command: CliCommand) {
                     auth_mode.as_str()
                 );
             }
+            Ok(())
         }
         CliCommand::Start {
             dry_run,
@@ -195,6 +340,7 @@ fn handle_bootstrap_command(command: CliCommand) {
             } else {
                 println!("start placeholder");
             }
+            Ok(())
         }
         CliCommand::Tui {
             dry_run,
@@ -205,6 +351,7 @@ fn handle_bootstrap_command(command: CliCommand) {
             } else {
                 println!("tui placeholder");
             }
+            Ok(())
         }
         CliCommand::Inbox { command } => match command {
             InboxCommand::Add {
@@ -217,9 +364,11 @@ fn handle_bootstrap_command(command: CliCommand) {
                 } else {
                     println!("inbox add placeholder title={title}");
                 }
+                Ok(())
             }
             InboxCommand::List { dry_run: _ } => {
                 println!("inbox list placeholder (empty)");
+                Ok(())
             }
         },
         CliCommand::Gateway { command } => match command {
@@ -233,13 +382,17 @@ fn handle_bootstrap_command(command: CliCommand) {
                 } else {
                     println!("gateway add placeholder source={}", source.as_str());
                 }
+                Ok(())
             }
         },
         CliCommand::Verify { dry_run } => {
             if dry_run {
                 println!("DRY-RUN verify");
+                Ok(())
             } else {
-                println!("verify placeholder guardrails=present mode=OPERATE task_cycle=verified");
+                Err(anyhow!(
+                    "native non-dry-run verify is not implemented; use scripts/odin/odin verify or --dry-run"
+                ))
             }
         }
     }
@@ -326,20 +479,31 @@ fn run_legacy_runtime(cfg: CliConfig) -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-    let cfg = CliConfig {
-        config_path: cli.config_path.clone(),
-        legacy_root: cli.legacy_root.clone(),
-        legacy_odin_dir: cli.legacy_odin_dir.clone(),
-        plugins_root: cli.plugins_root.clone(),
-        task_file: cli.task_file.clone(),
-        run_once: cli.run_once,
-    };
+    let raw_args: Vec<String> = env::args().collect();
+    match Cli::try_parse_from(raw_args.clone()) {
+        Ok(cli) => {
+            let cfg = CliConfig {
+                config_path: cli.config_path.clone(),
+                legacy_root: cli.legacy_root.clone(),
+                legacy_odin_dir: cli.legacy_odin_dir.clone(),
+                plugins_root: cli.plugins_root.clone(),
+                task_file: cli.task_file.clone(),
+                run_once: cli.run_once,
+            };
 
-    if let Some(command) = cli.command {
-        handle_bootstrap_command(command);
-        return Ok(());
+            if let Some(command) = cli.command {
+                handle_bootstrap_command(command)?;
+                return Ok(());
+            }
+
+            run_legacy_runtime(cfg)
+        }
+        Err(err) => {
+            if !parse_error_targets_native_contract(&raw_args[1..]) {
+                let cfg = parse_legacy_cli_config(&raw_args[1..]);
+                return run_legacy_runtime(cfg);
+            }
+            err.exit()
+        }
     }
-
-    run_legacy_runtime(cfg)
 }

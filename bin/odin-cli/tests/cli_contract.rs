@@ -39,3 +39,40 @@ fn inbox_add_dry_run_contract() {
 fn verify_dry_run_contract() {
     assert_dry_run_contract(&["verify", "--dry-run"], "DRY-RUN verify");
 }
+
+#[test]
+fn gateway_add_dry_run_contract() {
+    assert_dry_run_contract(
+        &["gateway", "add", "cli", "--dry-run"],
+        "DRY-RUN gateway add source=cli",
+    );
+}
+
+#[test]
+fn inbox_list_dry_run_contract() {
+    assert_dry_run_contract(
+        &["inbox", "list", "--dry-run"],
+        "inbox list placeholder (empty)",
+    );
+}
+
+#[test]
+fn verify_non_dry_run_is_fail_safe() {
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("odin-cli");
+    cmd.args(["verify"]).timeout(Duration::from_secs(3));
+
+    cmd.assert()
+        .failure()
+        .stderr(contains("native non-dry-run verify is not implemented"));
+}
+
+#[test]
+fn unknown_args_fallback_to_legacy_parser() {
+    let mut cmd = assert_cmd::cargo::cargo_bin_cmd!("odin-cli");
+    cmd.args(["--run-once", "--legacy-unknown-flag"])
+        .timeout(Duration::from_secs(3));
+
+    cmd.assert()
+        .success()
+        .stdout(contains("bootstrap outcome:"));
+}
