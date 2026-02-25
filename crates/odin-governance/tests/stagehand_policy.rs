@@ -334,3 +334,21 @@ fn stagehand_denies_unresolved_absolute_command_path_fail_closed() {
         }
     );
 }
+
+#[test]
+fn stagehand_denies_quoted_parent_traversal_option_value_without_workspace_policy() {
+    let policy = stagehand_default_policy()
+        .with_enabled(true)
+        .with_commands(["cat"]);
+
+    let decision = policy.evaluate(Action::RunCommand(
+        "cat --input=\"../outside/secrets.txt\"".to_string(),
+    ));
+
+    assert_eq!(
+        decision,
+        PermissionDecision::Deny {
+            reason_code: "command_relative_path_traversal".to_string()
+        }
+    );
+}

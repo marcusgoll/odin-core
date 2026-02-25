@@ -466,10 +466,14 @@ fn has_unsafe_shell_syntax(command: &str) -> bool {
 
 fn has_relative_parent_traversal(args: &[String]) -> bool {
     args.iter().any(|arg| {
-        has_relative_parent_segment(arg)
-            || arg
+        let token = strip_wrapping_quotes(arg);
+        has_relative_parent_segment(&token)
+            || token
                 .split_once('=')
-                .map(|(_, value)| has_relative_parent_segment(value))
+                .map(|(_, value)| {
+                    let value = strip_wrapping_quotes(value);
+                    has_relative_parent_segment(value.trim())
+                })
                 .unwrap_or(false)
     })
 }
