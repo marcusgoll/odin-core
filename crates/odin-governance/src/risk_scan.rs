@@ -25,7 +25,15 @@ const NETWORK_PATTERNS: &[&str] = &[
     "axios.",
     "fetch(",
 ];
-const SECRET_PATTERNS: &[&str] = &["aws_secret", "secret_key", "api_key", "token=", "password="];
+const SECRET_PATTERNS: &[&str] = &[
+    "aws_secret",
+    "github_token",
+    "access_token",
+    "secret_key",
+    "api_key",
+    "token=",
+    "password=",
+];
 const DELETE_PATTERNS: &[&str] = &["rm -rf", "del /f", "shred "];
 
 pub fn scan_skill_content(scripts: &[String], readme: Option<&str>) -> Vec<RiskFinding> {
@@ -134,5 +142,26 @@ mod tests {
             network_wget_matches, 1,
             "expected a single deduplicated finding for repeated wget pattern"
         );
+    }
+
+    #[test]
+    fn scanner_detects_common_secret_markers_without_equals_sign() {
+        let scripts = vec![
+            "#!/usr/bin/env bash\necho GITHUB_TOKEN".to_string(),
+            "#!/usr/bin/env bash\necho ACCESS_TOKEN".to_string(),
+            "#!/usr/bin/env bash\necho API_KEY".to_string(),
+            "#!/usr/bin/env bash\necho SECRET_KEY".to_string(),
+        ];
+
+        let findings = scan_skill_content(&scripts, None);
+
+        for marker in ["github_token", "access_token", "api_key", "secret_key"] {
+            assert!(
+                findings.iter().any(|finding| {
+                    finding.category == RiskCategory::Secret && finding.pattern == marker
+                }),
+                "expected secret finding for marker {marker}"
+            );
+        }
     }
 }

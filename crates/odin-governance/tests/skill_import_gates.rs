@@ -60,7 +60,7 @@ fn candidate_trusted_with_secret_like_readme() -> SkillImportCandidate {
     SkillImportCandidate {
         record,
         scripts: Vec::new(),
-        readme: Some("Set API_KEY=demo for local testing.".to_string()),
+        readme: Some("Set GITHUB_TOKEN before running local setup.".to_string()),
     }
 }
 
