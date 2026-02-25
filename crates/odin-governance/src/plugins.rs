@@ -1,10 +1,17 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use odin_plugin_protocol::{DelegationCapability, PluginPermissionEnvelope, TrustLevel};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StagehandMode {
     ReadObserve,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct DomainRule {
+    host: String,
+    allow_subdomains: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -28,7 +35,7 @@ pub enum PermissionDecision {
 pub struct StagehandPolicy {
     enabled: bool,
     mode: StagehandMode,
-    allowed_domains: BTreeSet<String>,
+    allowed_domains: BTreeSet<DomainRule>,
     allowed_workspaces: BTreeSet<String>,
     allowed_commands: BTreeSet<String>,
 }
@@ -132,7 +139,7 @@ impl StagehandPolicy {
             return deny("workspace_not_allowlisted");
         };
 
-        if self.allowed_workspaces.contains(&workspace) {
+        if self.is_workspace_allowlisted(&workspace) {
             allow("workspace_allowlisted")
         } else {
             deny("workspace_not_allowlisted")
@@ -144,15 +151,27 @@ impl StagehandPolicy {
             return deny("mode_not_supported");
         }
 
-        let Some(command) = normalize_command(command) else {
+        let Some((command_name, args)) = parse_command(command) else {
             return deny("command_not_allowlisted");
         };
 
-        if self.allowed_commands.contains(&command) {
-            allow("command_allowlisted")
-        } else {
-            deny("command_not_allowlisted")
+        if !self.allowed_commands.contains(&command_name) {
+            return deny("command_not_allowlisted");
         }
+
+        if first_absolute_path_outside_workspaces(&args, &self.allowed_workspaces).is_some() {
+            return deny("command_path_outside_allowlisted_workspace");
+        }
+
+        allow("command_allowlisted")
+    }
+
+    fn is_workspace_allowlisted(&self, workspace: &str) -> bool {
+        let candidate = Path::new(workspace);
+        self.allowed_workspaces.iter().any(|allowed| {
+            let allowed = Path::new(allowed);
+            candidate == allowed || candidate.starts_with(allowed)
+        })
     }
 }
 
@@ -266,7 +285,10 @@ fn extract_host(url: &str) -> Option<String> {
     let without_scheme = trimmed
         .strip_prefix("https://")
         .or_else(|| trimmed.strip_prefix("http://"))?;
-    let authority = without_scheme.split('/').next()?;
+    let authority = without_scheme
+        .split(['/', '?', '#'])
+        .next()?
+        .trim();
     let host_port = authority.rsplit('@').next()?;
     let host = host_port.split(':').next()?.trim().to_ascii_lowercase();
     if host.is_empty() {
@@ -276,34 +298,46 @@ fn extract_host(url: &str) -> Option<String> {
     }
 }
 
-fn normalize_domain(domain: &str) -> Option<String> {
-    let trimmed = domain.trim().trim_start_matches("*.").to_ascii_lowercase();
-    if trimmed.is_empty() {
-        return None;
-    }
+fn normalize_domain(domain: &str) -> Option<DomainRule> {
+    let trimmed = domain.trim();
+    let (allow_subdomains, domain_part) = if let Some(stripped) = trimmed.strip_prefix("*.") {
+        (true, stripped)
+    } else {
+        (false, trimmed)
+    };
 
-    let candidate = trimmed
+    let lowered = domain_part.to_ascii_lowercase();
+    let normalized = lowered
         .strip_prefix("https://")
-        .or_else(|| trimmed.strip_prefix("http://"))
-        .unwrap_or(&trimmed);
-    let host = candidate
-        .split('/')
+        .or_else(|| lowered.strip_prefix("http://"))
+        .unwrap_or(&lowered);
+    let host = normalized
+        .split(['/', '?', '#'])
         .next()
-        .unwrap_or(candidate)
+        .unwrap_or(normalized)
         .split(':')
         .next()
-        .unwrap_or(candidate)
+        .unwrap_or(normalized)
+        .trim()
         .to_string();
-    if host.is_empty() { None } else { Some(host) }
+
+    if host.is_empty() {
+        None
+    } else {
+        Some(DomainRule {
+            host,
+            allow_subdomains,
+        })
+    }
 }
 
 fn normalize_workspace(workspace: &str) -> Option<String> {
     let trimmed = workspace.trim().trim_end_matches('/');
     if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
+        return None;
     }
+
+    Some(trimmed.to_string())
 }
 
 fn normalize_command(command: &str) -> Option<String> {
@@ -316,8 +350,64 @@ fn normalize_command(command: &str) -> Option<String> {
     }
 }
 
-fn domain_matches(host: &str, allowed: &str) -> bool {
-    host == allowed || host.ends_with(&format!(".{allowed}"))
+fn parse_command(command: &str) -> Option<(String, Vec<String>)> {
+    let mut tokens = command.split_whitespace();
+    let command_name = normalize_command(tokens.next()?)?;
+    let args = tokens.map(strip_wrapping_quotes).collect::<Vec<_>>();
+    Some((command_name, args))
+}
+
+fn first_absolute_path_outside_workspaces(
+    args: &[String],
+    allowed_workspaces: &BTreeSet<String>,
+) -> Option<String> {
+    for arg in args {
+        if let Some(path) = extract_absolute_path(arg) {
+            let path_obj = Path::new(&path);
+            let in_allowed_workspace = allowed_workspaces
+                .iter()
+                .any(|workspace| path_obj.starts_with(Path::new(workspace)));
+            if !in_allowed_workspace {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+fn extract_absolute_path(token: &str) -> Option<String> {
+    let stripped = strip_wrapping_quotes(token);
+    if Path::new(&stripped).is_absolute() {
+        return Some(stripped);
+    }
+
+    let (_, value) = stripped.split_once('=')?;
+    let value = strip_wrapping_quotes(value);
+    if Path::new(&value).is_absolute() {
+        Some(value)
+    } else {
+        None
+    }
+}
+
+fn strip_wrapping_quotes(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.len() >= 2 {
+        let starts_single = trimmed.starts_with('\'') && trimmed.ends_with('\'');
+        let starts_double = trimmed.starts_with('"') && trimmed.ends_with('"');
+        if starts_single || starts_double {
+            return trimmed[1..trimmed.len() - 1].to_string();
+        }
+    }
+
+    trimmed.to_string()
+}
+
+fn domain_matches(host: &str, allowed: &DomainRule) -> bool {
+    if host == allowed.host {
+        return true;
+    }
+    allowed.allow_subdomains && host.ends_with(&format!(".{}", allowed.host))
 }
 
 #[cfg(test)]
@@ -351,6 +441,18 @@ mod tests {
     #[test]
     fn policy_allows_allowlisted_domain() {
         let policy = stagehand_with_domains(["example.com"]);
+        let decision = policy.evaluate(Action::ObserveUrl("https://example.com/path".to_string()));
+        assert_eq!(
+            decision,
+            PermissionDecision::Allow {
+                reason_code: "domain_allowlisted".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn policy_wildcard_allows_subdomain() {
+        let policy = stagehand_with_domains(["*.example.com"]);
         let decision = policy.evaluate(Action::ObserveUrl("https://www.example.com/path".to_string()));
         assert_eq!(
             decision,
