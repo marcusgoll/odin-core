@@ -1,0 +1,11 @@
+[package]
+name = "odin-governance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+odin-plugin-protocol = { path = "../odin-plugin-protocol" }

@@ -152,6 +152,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "odin-governance"
+version = "0.1.0"
+dependencies = [
+ "odin-plugin-protocol",
+ "serde",
+ "serde_yaml",
+ "thiserror",
+]
+
+[[package]]
 name = "odin-plugin-manager"
 version = "0.1.0"
 dependencies = [
