@@ -1,0 +1,31 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        run: cargo build -p odin-cli --release
+      - name: Checksums
+        run: |
+          mkdir -p dist
+          cp target/release/odin-cli dist/
+          sha256sum dist/odin-cli > dist/SHA256SUMS
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          output-file: dist/sbom.spdx.json
+          format: spdx-json
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: odin-core-release
+          path: dist/

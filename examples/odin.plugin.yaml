@@ -1,0 +1,48 @@
+schema_version: 1
+plugin:
+  name: example.safe-github
+  version: 0.1.0
+  description: Safe GitHub automation plugin
+  runtime: external-process
+  entrypoint:
+    command: ./bin/plugin
+    args: ["serve"]
+  compatibility:
+    core_version: ">=0.1.0 <0.2.0"
+  hooks:
+    - event: task.received
+      handler: on_task_received
+    - event: action.requested
+      handler: on_action_requested
+  capabilities:
+    - id: repo.read
+      scope: [project]
+    - id: repo.write.branch
+      scope: [project]
+    - id: network.http
+      scope: [allowlisted_domains]
+  connectors:
+    - id: github
+      min_version: ">=1.0.0"
+  storage:
+    - kind: kv
+      name: plugin_state
+      quota_mb: 50
+  approvals:
+    risk_tier_overrides:
+      - capability: repo.write.branch
+        tier: sensitive
+distribution:
+  source:
+    type: local-path
+    ref: .
+  integrity:
+    checksum_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  provenance:
+    builder: github-actions
+    repo: org/example-safe-github
+    commit: abcdef0123456789abcdef0123456789abcdef01
+signing:
+  required: false
+  method: none
+  signature: ""

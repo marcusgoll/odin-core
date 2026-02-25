@@ -1,0 +1,24 @@
+schema_version: 1
+polling:
+  sentry_interval_seconds: 900
+  pr_health_interval_seconds: 900
+sentry:
+  enabled: true
+  api_base_url: https://sentry.io/api/0
+  org_slug: example-org
+  project_slug: example-project
+  token_handle: secret://private/ops-watchdog/sentry-token
+  critical_threshold:
+    error_count_gt: 100
+github:
+  enabled: true
+  repo: example-org/example-repo
+  token_handle: secret://private/ops-watchdog/github-token
+  pr_state: open
+notifications:
+  enabled: true
+  channel_handle: secret://private/ops-watchdog/notify-channel
+automation:
+  enqueue_sentry_fix_tasks: true
+  enqueue_pr_update_branch_tasks: true
+  dedup_window_seconds: 900

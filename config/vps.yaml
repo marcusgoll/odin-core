@@ -1,0 +1,7 @@
+extends: default
+runtime:
+  mode: compat
+network:
+  strict_egress: true
+audit:
+  level: info

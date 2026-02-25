@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Minimal private plugin runtime scaffold.
+# Contract: reads JSON event envelopes from stdin and emits JSON action requests on stdout.
+
+cmd="${1:-serve}"
+
+emit_json() {
+  printf '%s\n' "$1"
+}
+
+handle_event() {
+  local event_json="$1"
+  local event_type
+  event_type="$(echo "$event_json" | jq -r '.event_type // ""' 2>/dev/null || echo "")"
+  local task_type
+  task_type="$(echo "$event_json" | jq -r '.payload.task_type // ""' 2>/dev/null || echo "")"
+  local project
+  project="$(echo "$event_json" | jq -r '.project // "default"' 2>/dev/null || echo "default")"
+
+  if [[ "$event_type" == "task.received" && "$task_type" == "watchdog.sentry.poll" ]]; then
+    emit_json "$(jq -nc \
+      --arg cap "monitoring.sentry.read" \
+      --arg project "$project" \
+      --arg reason "poll unresolved issues and queue remediation tasks" \
+      '{action:"request_capability", capability:{id:$cap, project:$project}, reason:$reason}')"
+    return 0
+  fi
+
+  if [[ "$event_type" == "task.received" && "$task_type" == "watchdog.pr_health.poll" ]]; then
+    emit_json "$(jq -nc \
+      --arg cap "vcs.pr.read" \
+      --arg project "$project" \
+      --arg reason "poll open PR health and queue branch update tasks" \
+      '{action:"request_capability", capability:{id:$cap, project:$project}, reason:$reason}')"
+    return 0
+  fi
+
+  emit_json "$(jq -nc '{action:"noop"}')"
+}
+
+case "$cmd" in
+  serve)
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      handle_event "$line"
+    done
+    ;;
+  emit-sample)
+    handle_event '{"event_type":"task.received","project":"example","payload":{"task_type":"watchdog.sentry.poll"}}'
+    ;;
+  *)
+    echo "unknown command: $cmd" >&2
+    exit 64
+    ;;
+esac

@@ -1,0 +1,16 @@
+schema_version: 1
+project: private
+plugins:
+  - name: private.ops-watchdog
+    allow:
+      - capability: monitoring.sentry.read
+      - capability: vcs.pr.read
+      - capability: task.enqueue
+      - capability: notify.send
+    deny:
+      - capability: repo.delete
+      - capability: system.shell.root
+    approvals:
+      sensitive:
+        mode: required
+      destructive: required

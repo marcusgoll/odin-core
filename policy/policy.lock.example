@@ -1,0 +1,4 @@
+schema_version: 1
+policy_pack:
+  version: 0.1.0
+  checksum_sha256: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"

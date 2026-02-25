@@ -1,0 +1,12 @@
+[package]
+name = "odin-policy-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+odin-plugin-protocol = { path = "../odin-plugin-protocol" }

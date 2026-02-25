@@ -1,0 +1,15 @@
+[package]
+name = "odin-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+odin-audit = { path = "../../crates/odin-audit" }
+odin-compat-bash = { path = "../../crates/odin-compat-bash" }
+odin-core-runtime = { path = "../../crates/odin-core-runtime" }
+odin-plugin-protocol = { path = "../../crates/odin-plugin-protocol" }
+odin-policy-engine = { path = "../../crates/odin-policy-engine" }

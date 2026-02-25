@@ -1,0 +1,6 @@
+schema_version: 1
+default: deny
+approvals:
+  sensitive: conditional
+  destructive: required
+plugins: []

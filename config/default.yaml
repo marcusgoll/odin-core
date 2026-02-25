@@ -1,0 +1,12 @@
+schema_version: 1
+runtime:
+  mode: compat
+  queue_impl: compat
+  policy_impl: native
+  plugin_loader: native
+plugins:
+  dir: /var/odin/plugins
+  marketplace_enabled: false
+security:
+  default_deny: true
+  require_approval_for_destructive: true

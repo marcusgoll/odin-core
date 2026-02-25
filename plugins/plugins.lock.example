@@ -1,0 +1,5 @@
+schema_version: 1
+plugins:
+  - name: example.safe-github
+    version: 0.1.0
+    checksum_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

@@ -1,0 +1,5 @@
+extends: default
+runtime:
+  mode: compat
+audit:
+  level: info

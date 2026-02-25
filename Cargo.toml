@@ -1,0 +1,26 @@
+[workspace]
+members = [
+  "bin/odin-cli",
+  "crates/odin-core-runtime",
+  "crates/odin-policy-engine",
+  "crates/odin-plugin-manager",
+  "crates/odin-plugin-protocol",
+  "crates/odin-secrets",
+  "crates/odin-audit",
+  "crates/odin-compat-bash",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "0.1.0"
+
+[workspace.dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+sha2 = "0.10"
+thiserror = "2"
+tracing = "0.1"

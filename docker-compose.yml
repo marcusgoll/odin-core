@@ -1,0 +1,13 @@
+services:
+  odin-core:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./state:/var/odin
+      - ./plugins:/var/odin/plugins
+      - ./policy:/var/odin/policy
+      - ./logs:/var/odin/logs
+      - ./config:/app/config:ro
+    command: ["--config", "config/default.yaml"]
+    restart: unless-stopped

@@ -1,0 +1,12 @@
+name: Bug Report
+description: Report a runtime, policy, or plugin issue
+body:
+  - type: textarea
+    attributes:
+      label: Summary
+  - type: textarea
+    attributes:
+      label: Reproduction
+  - type: textarea
+    attributes:
+      label: Expected vs Actual

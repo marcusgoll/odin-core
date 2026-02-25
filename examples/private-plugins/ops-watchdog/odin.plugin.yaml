@@ -1,0 +1,52 @@
+schema_version: 1
+plugin:
+  name: private.ops-watchdog
+  version: 0.1.0
+  description: Private watchdog plugin for external issue polling and PR health automation
+  runtime: external-process
+  entrypoint:
+    command: ./bin/plugin
+    args: ["serve"]
+  compatibility:
+    core_version: ">=0.1.0 <0.2.0"
+  hooks:
+    - event: task.received
+      handler: on_task_received
+    - event: action.requested
+      handler: on_action_requested
+    - event: task.completed
+      handler: on_task_completed
+  capabilities:
+    - id: monitoring.sentry.read
+      scope: [project]
+    - id: vcs.pr.read
+      scope: [project]
+    - id: task.enqueue
+      scope: [project]
+    - id: notify.send
+      scope: [project]
+  connectors:
+    - id: sentry
+      min_version: ">=1.0.0"
+    - id: github
+      min_version: ">=1.0.0"
+  storage:
+    - kind: kv
+      name: watchdog_state
+      quota_mb: 64
+  approvals:
+    risk_tier_overrides:
+      - capability: task.enqueue
+        tier: sensitive
+      - capability: notify.send
+        tier: sensitive
+distribution:
+  source:
+    type: local-path
+    ref: .
+  integrity:
+    checksum_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+signing:
+  required: false
+  method: none
+  signature: ""

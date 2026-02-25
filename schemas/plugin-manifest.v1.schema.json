@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://odin-core.dev/schemas/plugin-manifest.v1.schema.json",
+  "title": "Odin Plugin Manifest v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "plugin",
+    "distribution"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "plugin": {
+      "type": "object",
+      "required": [
+        "name",
+        "version",
+        "runtime",
+        "entrypoint",
+        "compatibility",
+        "capabilities"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "runtime": {
+          "type": "string",
+          "enum": [
+            "external-process"
+          ]
+        },
+        "entrypoint": {
+          "type": "object",
+          "required": [
+            "command"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "command": {
+              "type": "string",
+              "minLength": 1
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 32
+            }
+          }
+        },
+        "compatibility": {
+          "type": "object",
+          "required": [
+            "core_version"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "core_version": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "hooks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "event",
+              "handler"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "event": {
+                "type": "string",
+                "enum": [
+                  "task.received",
+                  "task.dispatched",
+                  "action.requested",
+                  "action.approved",
+                  "action.denied",
+                  "task.completed",
+                  "task.failed"
+                ]
+              },
+              "handler": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "maxItems": 64
+        },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "scope"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9._:-]{2,127}$"
+              },
+              "scope": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "connectors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9._-]{1,63}$"
+              },
+              "min_version": {
+                "type": "string"
+              }
+            }
+          },
+          "maxItems": 64
+        },
+        "storage": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "name",
+              "quota_mb"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "kv",
+                  "blob",
+                  "cache"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{1,63}$"
+              },
+              "quota_mb": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4096
+              }
+            }
+          },
+          "maxItems": 16
+        },
+        "approvals": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "risk_tier_overrides": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "capability",
+                  "tier"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "capability": {
+                    "type": "string"
+                  },
+                  "tier": {
+                    "type": "string",
+                    "enum": [
+                      "safe",
+                      "sensitive",
+                      "destructive"
+                    ]
+                  }
+                }
+              },
+              "maxItems": 256
+            }
+          }
+        }
+      }
+    },
+    "distribution": {
+      "type": "object",
+      "required": [
+        "source",
+        "integrity"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "object",
+          "required": [
+            "type",
+            "ref"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "local-path",
+                "git-ref",
+                "artifact"
+              ]
+            },
+            "ref": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "integrity": {
+          "type": "object",
+          "required": [
+            "checksum_sha256"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "checksum_sha256": {
+              "type": "string",
+              "pattern": "^[A-Fa-f0-9]{64}$"
+            }
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "builder": {
+              "type": "string"
+            },
+            "repo": {
+              "type": "string"
+            },
+            "commit": {
+              "type": "string"
+            },
+            "build_time": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        }
+      }
+    },
+    "signing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "none",
+            "sigstore",
+            "minisign"
+          ]
+        },
+        "signature": {
+          "type": "string"
+        },
+        "certificate": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
