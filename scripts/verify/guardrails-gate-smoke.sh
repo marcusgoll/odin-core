@@ -9,6 +9,8 @@ GUARDRAILS_PATH="${TMP_DIR}/guardrails.yaml"
 UNREADABLE_GUARDRAILS_PATH="${TMP_DIR}/guardrails-unreadable.yaml"
 QUOTED_DENY_GUARDRAILS_PATH="${TMP_DIR}/guardrails-quoted-deny.yaml"
 FLOW_DENY_GUARDRAILS_PATH="${TMP_DIR}/guardrails-flow-deny.yaml"
+BOM_CONFIRM_GUARDRAILS_PATH="${TMP_DIR}/guardrails-bom-confirm.yaml"
+QUOTED_KEY_DENY_GUARDRAILS_PATH="${TMP_DIR}/guardrails-quoted-key-deny.yaml"
 
 cleanup() {
   rm -rf "${TMP_DIR}"
@@ -39,6 +41,15 @@ EOF
 
 cat >"${FLOW_DENY_GUARDRAILS_PATH}" <<'EOF'
 denylist: [gateway.add, connect]
+confirm_required:
+  - integration
+EOF
+
+printf '\357\273\277confirm_required:\n  - integration\ndenylist:\n  - gateway.add\n' >"${BOM_CONFIRM_GUARDRAILS_PATH}"
+
+cat >"${QUOTED_KEY_DENY_GUARDRAILS_PATH}" <<'EOF'
+"denylist":
+  - gateway.add
 confirm_required:
   - integration
 EOF
@@ -159,5 +170,17 @@ expect_failure \
   2 \
   "denylisted by guardrails" \
   env ODIN_GUARDRAILS_ACK=yes scripts/odin/odin --guardrails "${FLOW_DENY_GUARDRAILS_PATH}" connect claude oauth --confirm
+
+expect_failure \
+  "BOM-prefixed confirm_required key enforces --confirm" \
+  2 \
+  "requires --confirm" \
+  env ODIN_GUARDRAILS_ACK=yes scripts/odin/odin --guardrails "${BOM_CONFIRM_GUARDRAILS_PATH}" connect claude oauth
+
+expect_failure \
+  "quoted denylist key blocks action" \
+  2 \
+  "denylisted by guardrails" \
+  env ODIN_GUARDRAILS_ACK=yes scripts/odin/odin --guardrails "${QUOTED_KEY_DENY_GUARDRAILS_PATH}" gateway add cli --confirm
 
 echo "[guardrails-gate] COMPLETE"

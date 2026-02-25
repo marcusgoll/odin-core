@@ -168,6 +168,10 @@ odin_bootstrap_guardrails_list_contains() {
     function trim(s) {
       return rtrim(ltrim(s))
     }
+    function mentions_key_token(token, expected, pattern) {
+      pattern = "(^|[^A-Za-z0-9_.-])" expected "([^A-Za-z0-9_.-]|$)"
+      return (token ~ pattern)
+    }
     function normalize_item(raw, single, item, first, last) {
       single = sprintf("%c", 39)
       item = trim(raw)
@@ -217,14 +221,51 @@ odin_bootstrap_guardrails_list_contains() {
         }
       }
     }
+    function parse_key_declaration(line, expected, key_part, rest, single, first, last, inner) {
+      single = sprintf("%c", 39)
+      key_part = line
+      sub(/:.*/, "", key_part)
+      key_part = trim(key_part)
+
+      rest = line
+      sub(/^[^:]*:[[:space:]]*/, "", rest)
+      parsed_rest = rest
+
+      if (key_part == expected) {
+        return 1
+      }
+
+      first = substr(key_part, 1, 1)
+      last = substr(key_part, length(key_part), 1)
+      if ((first == "\"" && last == "\"") || (first == single && last == single)) {
+        inner = substr(key_part, 2, length(key_part) - 2)
+        inner = trim(inner)
+        if (inner == expected) {
+          return 1
+        }
+        if (mentions_key_token(inner, expected)) {
+          parse_error = 1
+        }
+        return 0
+      }
+
+      if (mentions_key_token(key_part, expected)) {
+        parse_error = 1
+      }
+      return 0
+    }
     BEGIN {
       parse_error = 0
       found = 0
       in_section = 0
       section_indent = -1
+      parsed_rest = ""
     }
     {
       raw = $0
+      if (NR == 1) {
+        sub(/^\xef\xbb\xbf/, "", raw)
+      }
       sub(/\r$/, "", raw)
       line = raw
       sub(/[[:space:]]+#.*/, "", line)
@@ -251,7 +292,7 @@ odin_bootstrap_guardrails_list_contains() {
           next
         }
 
-        if (indent <= section_indent && line ~ /^[[:space:]]*[A-Za-z0-9_.-]+:[[:space:]]*.*$/) {
+        if (indent <= section_indent && line ~ /^[[:space:]]*[^:]+:[[:space:]]*.*$/) {
           in_section = 0
         } else {
           parse_error = 1
@@ -259,10 +300,8 @@ odin_bootstrap_guardrails_list_contains() {
         }
       }
 
-      key_prefix = "^[[:space:]]*" key ":[[:space:]]*"
-      if (line ~ key_prefix) {
-        rest = line
-        sub(key_prefix, "", rest)
+      if (line ~ /^[[:space:]]*[^:]+:[[:space:]]*.*$/ && parse_key_declaration(line, key)) {
+        rest = parsed_rest
         rest = trim(rest)
         if (rest == "") {
           in_section = 1
