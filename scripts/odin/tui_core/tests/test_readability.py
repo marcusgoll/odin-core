@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -17,7 +18,7 @@ from tui_core.collectors.logs import collect as collect_logs  # noqa: E402
 from tui_core.formatting import compact_relative_age, task_label_for_type, wip_state  # noqa: E402
 from tui_core.models import PanelData  # noqa: E402
 from tui_core.panels.inbox import render as render_inbox  # noqa: E402
-from tui_core.panels.kanban import render as render_kanban  # noqa: E402
+from tui_core.panels.kanban import _lane_panel, render as render_kanban  # noqa: E402
 from tui_core.panels.logs import render as render_logs  # noqa: E402
 
 
@@ -58,6 +59,29 @@ class CollectorReadabilityTests(unittest.TestCase):
             self.assertTrue(data.items)
             self.assertIn("task_label", data.items[0])
             self.assertEqual(data.items[0]["task_label"], "Watchdog PR Health Poll")
+
+    def test_inbox_age_prefers_created_at_over_file_mtime(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            odin_dir = Path(tmp)
+            inbox_dir = odin_dir / "inbox"
+            inbox_dir.mkdir(parents=True)
+            old_created = (datetime.now(timezone.utc) - timedelta(hours=6, minutes=5)).isoformat()
+            task_file = inbox_dir / "task-2.json"
+            task_file.write_text(
+                json.dumps(
+                    {
+                        "task_id": "dispatch-work-1700000000",
+                        "type": "dispatch_work",
+                        "source": "cron",
+                        "created_at": old_created,
+                    }
+                )
+            )
+            now = datetime.now().timestamp()
+            os.utime(task_file, (now, now))
+            data = collect_inbox(odin_dir)
+            self.assertTrue(data.items)
+            self.assertIn("h ago", data.items[0]["age"])
 
     def test_kanban_collect_has_wip_and_top_tasks(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -154,6 +178,10 @@ class PanelReadabilityTests(unittest.TestCase):
             )
         )
         self.assertIsInstance(panel.renderable, Columns)
+
+    def test_kanban_lane_panel_not_fixed_width(self):
+        lane = _lane_panel({"column": "ready", "wip": "1/4", "wip_state": "ok", "tasks": ["Task"]})
+        self.assertIsNone(lane.width)
 
 
 if __name__ == "__main__":

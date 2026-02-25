@@ -39,7 +39,8 @@ def _lane_panel(item: dict) -> Panel:
     else:
         shown = [str(task) for task in tasks[:5]]
         for task in shown:
-            content.add_row(Text(f"- {task}", no_wrap=True, overflow="ellipsis"))
+            clipped = task if len(task) <= 72 else f"{task[:69]}..."
+            content.add_row(Text(f"- {clipped}", no_wrap=True, overflow="ellipsis"))
         remaining = len(tasks) - len(shown)
         if remaining > 0:
             content.add_row(Text(f"+{remaining} more", style="dim"))
@@ -49,7 +50,6 @@ def _lane_panel(item: dict) -> Panel:
         title=f"[bold]{_lane_title(lane_name)}[/bold] [dim]{wip}[/dim]",
         border_style=border,
         padding=(0, 1),
-        width=34,
     )
 
 
