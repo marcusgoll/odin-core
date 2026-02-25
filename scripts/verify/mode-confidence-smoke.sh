@@ -110,6 +110,19 @@ run_cli() {
 
 echo "[mode-confidence] RUN cli path connect+tui+inbox+verify"
 low_confidence_state_path="${TMP_DIR}/low-confidence-state.json"
+export ODIN_MODE_STATE_PATH="${low_confidence_state_path}"
+odin_mode_state_init
+odin_mode_state_record_event "guardrails.acknowledged.verified"
+odin_mode_state_record_event "task.cycle.verified"
+assert_eq "low-confidence precondition guardrails acknowledged" "true" "$(odin_mode_state_get guardrails_acknowledged)"
+assert_eq "low-confidence precondition task cycle verified" "true" "$(odin_mode_state_get task_cycle_verified)"
+low_pre_confidence="$(odin_mode_state_get confidence)"
+if (( low_pre_confidence >= 60 )); then
+  echo "[mode-confidence] ERROR expected low-confidence precondition < 60, got ${low_pre_confidence}" >&2
+  exit 1
+fi
+echo "[mode-confidence] PASS low-confidence precondition confidence=${low_pre_confidence}"
+
 low_verify_out_file="$(mktemp "${TMP_DIR}/low-verify.out.XXXXXX")"
 low_verify_err_file="$(mktemp "${TMP_DIR}/low-verify.err.XXXXXX")"
 set +e
