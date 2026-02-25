@@ -484,15 +484,14 @@ fn has_relative_parent_segment(token: &str) -> bool {
 
 fn has_unscoped_relative_path(args: &[String]) -> bool {
     args.iter().any(|arg| {
-        if arg.starts_with('-') {
-            return false;
-        }
-
-        let candidate = arg
-            .split_once('=')
-            .map(|(_, value)| value)
-            .unwrap_or(arg.as_str())
-            .trim();
+        let candidate = if let Some((_, value)) = arg.split_once('=') {
+            value.trim()
+        } else {
+            if arg.starts_with('-') {
+                return false;
+            }
+            arg.trim()
+        };
         if candidate.is_empty() {
             return false;
         }
