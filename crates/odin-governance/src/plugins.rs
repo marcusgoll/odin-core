@@ -94,7 +94,7 @@ impl StagehandPolicy {
         self.allowed_commands.extend(
             commands
                 .into_iter()
-                .filter_map(|command| normalize_command(command.as_ref())),
+                .filter_map(|command| normalize_command_scope_entry(command.as_ref())),
         );
         self
     }
@@ -280,7 +280,7 @@ fn apply_permission_scope(
                 permission
                     .scope
                     .iter()
-                    .filter_map(|command| normalize_command(command)),
+                    .filter_map(|command| normalize_command_scope_entry(command)),
             );
         }
         "stagehand.enabled" => {
@@ -369,9 +369,21 @@ fn normalize_workspace(workspace: &str) -> Option<String> {
     Some(trimmed.to_string())
 }
 
-fn normalize_command(command: &str) -> Option<String> {
-    let first = command.split_whitespace().next()?;
-    let normalized = first.trim();
+fn normalize_command_scope_entry(command: &str) -> Option<String> {
+    let normalized = command.trim();
+    if normalized.is_empty() {
+        return None;
+    }
+
+    if normalized.chars().any(char::is_whitespace) {
+        return None;
+    }
+
+    Some(normalized.to_string())
+}
+
+fn normalize_command_name(command: &str) -> Option<String> {
+    let normalized = command.trim();
     if normalized.is_empty() {
         None
     } else {
@@ -381,7 +393,7 @@ fn normalize_command(command: &str) -> Option<String> {
 
 fn parse_command(command: &str) -> Option<(String, Vec<String>)> {
     let mut tokens = command.split_whitespace();
-    let command_name = normalize_command(tokens.next()?)?;
+    let command_name = normalize_command_name(tokens.next()?)?;
     let args = tokens.map(strip_wrapping_quotes).collect::<Vec<_>>();
     Some((command_name, args))
 }
@@ -444,9 +456,12 @@ fn domain_matches(host: &str, allowed: &DomainRule) -> bool {
 }
 
 fn has_unsafe_shell_syntax(command: &str) -> bool {
-    command
-        .chars()
-        .any(|ch| matches!(ch, ';' | '|' | '&' | '>' | '<' | '`' | '$' | '(' | ')'))
+    command.chars().any(|ch| {
+        matches!(
+            ch,
+            ';' | '|' | '&' | '>' | '<' | '`' | '$' | '(' | ')' | '\n' | '\r'
+        )
+    })
 }
 
 fn has_relative_parent_traversal(args: &[String]) -> bool {

@@ -228,3 +228,35 @@ fn stagehand_untrusted_envelope_cannot_enable_plugin() {
         }
     );
 }
+
+#[test]
+fn stagehand_rejects_whitespace_command_scope_entry() {
+    let policy = stagehand_default_policy()
+        .with_enabled(true)
+        .with_commands(["cat --color=always"]);
+
+    let decision = policy.evaluate(Action::RunCommand("cat".to_string()));
+
+    assert_eq!(
+        decision,
+        PermissionDecision::Deny {
+            reason_code: "command_not_allowlisted".to_string()
+        }
+    );
+}
+
+#[test]
+fn stagehand_denies_command_with_newline_control_separator() {
+    let policy = stagehand_default_policy()
+        .with_enabled(true)
+        .with_commands(["cat"]);
+
+    let decision = policy.evaluate(Action::RunCommand("cat /tmp/file\nid".to_string()));
+
+    assert_eq!(
+        decision,
+        PermissionDecision::Deny {
+            reason_code: "command_unsafe_shell_syntax".to_string()
+        }
+    );
+}
