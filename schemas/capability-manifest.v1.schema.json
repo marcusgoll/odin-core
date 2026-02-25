@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://odin-core.dev/schemas/capability-manifest.v1.schema.json",
+  "title": "Odin Delegation Capability Manifest v1",
+  "type": "object",
+  "required": ["schema_version", "plugin", "capabilities"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "plugin": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/delegation_capability"
+      },
+      "default": []
+    }
+  },
+  "$defs": {
+    "delegation_capability": {
+      "type": "object",
+      "required": ["id", "scope"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      }
+    }
+  }
+}
