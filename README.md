@@ -48,6 +48,14 @@ cargo run -p odin-cli -- \
 
 Use `--legacy-root /path/to/cfipros` to enqueue follow-up tasks via legacy inbox writer.
 
+## Verification Gates
+
+```bash
+bash scripts/verify/compat-regression.sh --legacy-root /home/orchestrator/cfipros
+bash scripts/verify/quickstart-smoke.sh
+bash scripts/verify/plugin-install-matrix.sh
+```
+
 ## Scope
 
 - Core orchestration runtime

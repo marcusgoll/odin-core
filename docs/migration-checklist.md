@@ -49,15 +49,15 @@ Baseline artifacts:
 
 ## Phase 3: OSS quickstart and demo plugin
 
-- [ ] One-command quickstart validated on fresh machine.
-- [ ] Demo plugin installs from local path and git ref.
-- [ ] Signed artifact install path tested with checksum + signature failure cases.
+- [x] One-command quickstart validated on fresh machine.
+- [x] Demo plugin installs from local path and git ref.
+- [x] Signed artifact install path tested with checksum + signature failure cases.
 
 ## Phase 4: Release readiness
 
-- [ ] CI gates active for lint/test/integration/secret scan/dependency scan.
-- [ ] Release artifacts include checksums and SBOM.
-- [ ] SemVer compatibility notes published.
+- [x] CI gates active for lint/test/integration/secret scan/dependency scan.
+- [x] Release artifacts include checksums and SBOM.
+- [x] SemVer compatibility notes published.
 
 ## Regression matrix (must stay green)
 
