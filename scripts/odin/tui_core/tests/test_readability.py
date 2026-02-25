@@ -62,6 +62,61 @@ class CollectorReadabilityTests(unittest.TestCase):
             data = collect_agents(odin_dir)
             self.assertEqual(data.items[0]["state"], "busy")
 
+    def test_agents_collect_prefers_newest_created_at_task_for_agent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            odin_dir = Path(tmp)
+            agents_dir = odin_dir / "agents" / "sm"
+            agents_dir.mkdir(parents=True)
+            (agents_dir / "status.json").write_text(json.dumps({"name": "sm", "role": "sm"}))
+            newer = (datetime.now(timezone.utc) - timedelta(minutes=3)).isoformat()
+            older = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+            oldest = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
+            (odin_dir / "state.json").write_text(
+                json.dumps(
+                    {
+                        "dispatched_tasks": {
+                            "task-older": {"agent": "sm", "created_at": older},
+                            "task-newer": {"agent": "sm", "created_at": newer},
+                            "task-oldest": {"agent": "sm", "created_at": oldest},
+                        }
+                    }
+                )
+            )
+            data = collect_agents(odin_dir)
+            self.assertEqual(data.items[0]["task"], "task-newer")
+            self.assertEqual(data.items[0]["state"], "busy")
+
+    def test_agents_collect_falls_back_to_unknown_without_dispatch_or_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            odin_dir = Path(tmp)
+            agents_dir = odin_dir / "agents" / "sm"
+            agents_dir.mkdir(parents=True)
+            (agents_dir / "status.json").write_text(json.dumps({"name": "sm", "role": "sm"}))
+            data = collect_agents(odin_dir)
+            self.assertEqual(data.items[0]["task"], "-")
+            self.assertEqual(data.items[0]["state"], "unknown")
+
+    def test_agents_collect_falls_back_to_task_id_when_created_at_missing_or_invalid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            odin_dir = Path(tmp)
+            agents_dir = odin_dir / "agents" / "sm"
+            agents_dir.mkdir(parents=True)
+            (agents_dir / "status.json").write_text(json.dumps({"name": "sm", "role": "sm"}))
+            (odin_dir / "state.json").write_text(
+                json.dumps(
+                    {
+                        "dispatched_tasks": {
+                            "task-a": {"agent": "sm"},
+                            "task-c": {"agent": "sm", "created_at": "not-a-timestamp"},
+                            "task-b": {"agent": "sm", "created_at": 12345},
+                        }
+                    }
+                )
+            )
+            data = collect_agents(odin_dir)
+            self.assertEqual(data.items[0]["task"], "task-c")
+            self.assertEqual(data.items[0]["state"], "busy")
+
     def test_inbox_collect_has_readable_task_label(self):
         with tempfile.TemporaryDirectory() as tmp:
             odin_dir = Path(tmp)

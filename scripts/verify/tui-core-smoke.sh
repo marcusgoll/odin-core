@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
 
+echo "[tui-smoke] RUN readability tests"
+python3 -m unittest scripts.odin.tui_core.tests.test_readability
+
 echo "[tui-smoke] RUN compile"
 python3 -m py_compile scripts/odin/odin-tui.py scripts/odin/odin-tui-legacy.py scripts/odin/tui_core/app.py
 
