@@ -3,7 +3,7 @@
   "$id": "https://odin-core.dev/schemas/capability-manifest.v1.schema.json",
   "title": "Odin Delegation Capability Manifest v1",
   "type": "object",
-  "required": ["schema_version", "plugin", "capabilities"],
+  "required": ["schema_version", "plugin"],
   "additionalProperties": false,
   "properties": {
     "schema_version": {
@@ -24,7 +24,7 @@
   "$defs": {
     "delegation_capability": {
       "type": "object",
-      "required": ["id", "scope"],
+      "required": ["id"],
       "additionalProperties": false,
       "properties": {
         "id": {

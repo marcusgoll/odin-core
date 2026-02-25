@@ -222,6 +222,16 @@ pub struct SigningSpec {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn load_schema(file_name: &str) -> serde_json::Value {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../schemas")
+            .join(file_name);
+        let raw = fs::read_to_string(&path).expect("read schema");
+        serde_json::from_str(&raw).expect("decode schema")
+    }
 
     #[test]
     fn policy_decision_round_trip() {
@@ -305,5 +315,109 @@ mod tests {
         assert_eq!(decoded.plugin, "stagehand");
         assert_eq!(decoded.trust_level, TrustLevel::Caution);
         assert_eq!(decoded.permissions[0].id, "browser.observe");
+    }
+
+    #[test]
+    fn skill_registry_defaults_missing_skills_array() {
+        let value = json!({
+            "schema_version": 1,
+            "scope": "project"
+        });
+
+        let decoded: SkillRegistry = serde_json::from_value(value).expect("decode");
+        assert!(decoded.skills.is_empty());
+    }
+
+    #[test]
+    fn skill_record_defaults_missing_capabilities_array() {
+        let value = json!({
+            "name": "brainstorming",
+            "trust_level": "trusted",
+            "source": "local:/skills/brainstorming",
+            "pinned_version": null
+        });
+
+        let decoded: SkillRecord = serde_json::from_value(value).expect("decode");
+        assert!(decoded.capabilities.is_empty());
+    }
+
+    #[test]
+    fn delegation_capability_defaults_missing_scope_array() {
+        let value = json!({
+            "id": "browser.observe"
+        });
+
+        let decoded: DelegationCapability = serde_json::from_value(value).expect("decode");
+        assert!(decoded.scope.is_empty());
+    }
+
+    #[test]
+    fn capability_manifest_defaults_missing_capabilities_array() {
+        let value = json!({
+            "schema_version": 1,
+            "plugin": "stagehand"
+        });
+
+        let decoded: CapabilityManifest = serde_json::from_value(value).expect("decode");
+        assert!(decoded.capabilities.is_empty());
+    }
+
+    #[test]
+    fn plugin_permission_envelope_defaults_missing_permissions_array() {
+        let value = json!({
+            "plugin": "stagehand",
+            "trust_level": "caution"
+        });
+
+        let decoded: PluginPermissionEnvelope = serde_json::from_value(value).expect("decode");
+        assert!(decoded.permissions.is_empty());
+    }
+
+    #[test]
+    fn skill_registry_schema_allows_serde_defaulted_arrays() {
+        let schema = load_schema("skill-registry.v1.schema.json");
+
+        let root_required = schema["required"].as_array().expect("root required");
+        assert!(!root_required.iter().any(|item| item.as_str() == Some("skills")));
+        assert_eq!(schema["properties"]["skills"]["default"], json!([]));
+
+        let skill_record_required = schema["$defs"]["skill_record"]["required"]
+            .as_array()
+            .expect("skill_record required");
+        assert!(!skill_record_required
+            .iter()
+            .any(|item| item.as_str() == Some("capabilities")));
+        assert_eq!(
+            schema["$defs"]["skill_record"]["properties"]["capabilities"]["default"],
+            json!([])
+        );
+        assert_eq!(
+            schema["$defs"]["skill_record"]["properties"]["capabilities"]["items"]["$ref"],
+            json!(
+                "https://odin-core.dev/schemas/capability-manifest.v1.schema.json#/$defs/delegation_capability"
+            )
+        );
+    }
+
+    #[test]
+    fn capability_manifest_schema_allows_serde_defaulted_arrays() {
+        let schema = load_schema("capability-manifest.v1.schema.json");
+
+        let root_required = schema["required"].as_array().expect("root required");
+        assert!(!root_required
+            .iter()
+            .any(|item| item.as_str() == Some("capabilities")));
+        assert_eq!(schema["properties"]["capabilities"]["default"], json!([]));
+
+        let capability_required = schema["$defs"]["delegation_capability"]["required"]
+            .as_array()
+            .expect("delegation_capability required");
+        assert!(!capability_required
+            .iter()
+            .any(|item| item.as_str() == Some("scope")));
+        assert_eq!(
+            schema["$defs"]["delegation_capability"]["properties"]["scope"]["default"],
+            json!([])
+        );
     }
 }
