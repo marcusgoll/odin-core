@@ -42,17 +42,32 @@ odin_bootstrap_has_dry_run() {
   odin_bootstrap_has_flag "--dry-run" "$@"
 }
 
-odin_bootstrap_reject_unknown_flags() {
+odin_bootstrap_validate_optional_dry_run_only() {
   local action="$1"
   shift || true
 
+  local dry_run_count=0
   local arg
   for arg in "$@"; do
-    if [[ "${arg}" == -* && "${arg}" != "--dry-run" ]]; then
-      odin_bootstrap_err "${action}: unknown flag '${arg}'"
-      return 64
-    fi
+    case "${arg}" in
+      --dry-run)
+        dry_run_count=$((dry_run_count + 1))
+        ;;
+      -*)
+        odin_bootstrap_err "${action}: unknown flag '${arg}'"
+        return 64
+        ;;
+      *)
+        odin_bootstrap_err "${action}: unexpected argument '${arg}'"
+        return 64
+        ;;
+    esac
   done
+
+  if [[ "${dry_run_count}" -gt 1 ]]; then
+    odin_bootstrap_err "${action}: --dry-run may be specified once"
+    return 64
+  fi
 
   return 0
 }
@@ -96,7 +111,7 @@ odin_bootstrap_cmd_connect() {
     return 64
   fi
 
-  if odin_bootstrap_reject_unknown_flags "connect" "${args[@]}"; then
+  if odin_bootstrap_validate_optional_dry_run_only "connect" "${args[@]}"; then
     :
   else
     local rc=$?
@@ -120,7 +135,7 @@ odin_bootstrap_cmd_connect() {
 
 odin_bootstrap_cmd_start() {
   local args=("$@")
-  if odin_bootstrap_reject_unknown_flags "start" "${args[@]}"; then
+  if odin_bootstrap_validate_optional_dry_run_only "start" "${args[@]}"; then
     :
   else
     local rc=$?
@@ -144,7 +159,7 @@ odin_bootstrap_cmd_start() {
 
 odin_bootstrap_cmd_tui() {
   local args=("$@")
-  if odin_bootstrap_reject_unknown_flags "tui" "${args[@]}"; then
+  if odin_bootstrap_validate_optional_dry_run_only "tui" "${args[@]}"; then
     :
   else
     local rc=$?
@@ -171,7 +186,7 @@ odin_bootstrap_cmd_inbox_add() {
   shift
   local args=("$@")
 
-  if odin_bootstrap_reject_unknown_flags "inbox add" "${args[@]}"; then
+  if odin_bootstrap_validate_optional_dry_run_only "inbox add" "${args[@]}"; then
     :
   else
     local rc=$?
@@ -194,6 +209,15 @@ odin_bootstrap_cmd_inbox_add() {
 }
 
 odin_bootstrap_cmd_inbox_list() {
+  local args=("$@")
+
+  if odin_bootstrap_validate_optional_dry_run_only "inbox list" "${args[@]}"; then
+    :
+  else
+    local rc=$?
+    return "${rc}"
+  fi
+
   if ! odin_bootstrap_guardrails_available; then
     odin_bootstrap_info "guardrails not found; running conservative read-only inbox list"
   fi
@@ -226,7 +250,7 @@ odin_bootstrap_cmd_gateway_add() {
     return "${rc}"
   fi
 
-  if odin_bootstrap_reject_unknown_flags "gateway add" "${args[@]}"; then
+  if odin_bootstrap_validate_optional_dry_run_only "gateway add" "${args[@]}"; then
     :
   else
     local rc=$?
@@ -251,7 +275,7 @@ odin_bootstrap_cmd_gateway_add() {
 odin_bootstrap_cmd_verify() {
   local args=("$@")
 
-  if odin_bootstrap_reject_unknown_flags "verify" "${args[@]}"; then
+  if odin_bootstrap_validate_optional_dry_run_only "verify" "${args[@]}"; then
     :
   else
     local rc=$?
@@ -307,10 +331,6 @@ odin_bootstrap_dispatch() {
           ;;
         list)
           shift
-          if [[ $# -ne 0 ]]; then
-            odin_bootstrap_err "usage: odin inbox list"
-            return 64
-          fi
           odin_bootstrap_cmd_inbox_list "$@"
           ;;
         *)
