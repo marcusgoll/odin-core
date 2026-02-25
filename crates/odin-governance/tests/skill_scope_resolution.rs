@@ -46,10 +46,43 @@ fn user_overrides_project_and_global() {
         Some(&project_registry()),
         Some(&global_registry()),
     )
+    .expect("resolve should succeed")
     .expect("resolved");
 
     assert_eq!(resolved.trust_level, TrustLevel::Trusted);
     assert_eq!(resolved.source, "user:/skills/brainstorming");
+}
+
+#[test]
+fn resolver_rejects_wrong_scope_wiring() {
+    let err = resolve_skill(
+        "brainstorming",
+        Some(&project_registry()),
+        Some(&user_registry()),
+        Some(&global_registry()),
+    )
+    .expect_err("must fail on wiring mismatch");
+
+    assert_parse_error_contains(err, "scope mismatch");
+}
+
+#[test]
+fn resolver_preserves_source_provenance() {
+    let registry = SkillRegistry {
+        schema_version: 1,
+        scope: SkillScope::User,
+        skills: vec![SkillRecord {
+            source: "PROJECT:/skills/brainstorming".to_string(),
+            trust_level: TrustLevel::Trusted,
+            ..SkillRecord::default_for("brainstorming")
+        }],
+    };
+
+    let resolved = resolve_skill("brainstorming", Some(&registry), None, None)
+        .expect("resolve should succeed")
+        .expect("resolved");
+
+    assert_eq!(resolved.source, "PROJECT:/skills/brainstorming");
 }
 
 #[test]
@@ -110,6 +143,37 @@ skills:
 
     let err = parse_scoped_registry(yaml, SkillScope::User).expect_err("must reject schema");
     assert_parse_error_contains(err, "schema_version");
+}
+
+#[test]
+fn loader_normalizes_scope_prefix_case_insensitively_without_rewriting_scope() {
+    let yaml = r#"
+schema_version: 1
+scope: user
+skills:
+  - name: brainstorming
+    trust_level: trusted
+    source: PrOjEcT:/skills/brainstorming
+"#;
+
+    let parsed = parse_scoped_registry(yaml, SkillScope::User).expect("parse");
+    assert_eq!(parsed.skills[0].source, "project:/skills/brainstorming");
+}
+
+#[test]
+fn loader_rejects_record_scope_mismatch() {
+    let yaml = r#"
+schema_version: 1
+scope: user
+skills:
+  - name: brainstorming
+    scope: project
+    trust_level: trusted
+    source: /skills/brainstorming
+"#;
+
+    let err = parse_scoped_registry(yaml, SkillScope::User).expect_err("must reject mismatch");
+    assert_parse_error_contains(err, "scope mismatch");
 }
 
 fn assert_parse_error_contains(err: SkillRegistryLoadError, expected: &str) {

@@ -29,6 +29,8 @@ struct RawSkillRegistry {
 struct RawSkillRecord {
     name: String,
     #[serde(default)]
+    scope: Option<String>,
+    #[serde(default)]
     trust_level: Option<String>,
     #[serde(default)]
     source: Option<String>,
@@ -43,10 +45,17 @@ pub fn resolve_skill(
     user: Option<&SkillRegistry>,
     project: Option<&SkillRegistry>,
     global: Option<&SkillRegistry>,
-) -> Option<SkillRecord> {
-    find(name, user, SkillScope::User)
-        .or_else(|| find(name, project, SkillScope::Project))
-        .or_else(|| find(name, global, SkillScope::Global))
+) -> Result<Option<SkillRecord>, SkillRegistryLoadError> {
+    if let Some(record) = find(name, user, SkillScope::User)? {
+        return Ok(Some(record));
+    }
+    if let Some(record) = find(name, project, SkillScope::Project)? {
+        return Ok(Some(record));
+    }
+    if let Some(record) = find(name, global, SkillScope::Global)? {
+        return Ok(Some(record));
+    }
+    Ok(None)
 }
 
 pub fn load_user_registry(path: &Path) -> Result<SkillRegistry, SkillRegistryLoadError> {
@@ -106,21 +115,45 @@ pub fn parse_scoped_registry(
     })
 }
 
-fn find(name: &str, registry: Option<&SkillRegistry>, scope: SkillScope) -> Option<SkillRecord> {
-    registry.and_then(|registry| {
-        registry
-            .skills
-            .iter()
-            .find(|record| record.name == name)
-            .cloned()
-            .map(|record| normalize_resolved_record(record, scope))
-    })
+fn find(
+    name: &str,
+    registry: Option<&SkillRegistry>,
+    expected_scope: SkillScope,
+) -> Result<Option<SkillRecord>, SkillRegistryLoadError> {
+    let Some(registry) = registry else {
+        return Ok(None);
+    };
+
+    if registry.scope != expected_scope {
+        return Err(SkillRegistryLoadError::Parse(format!(
+            "scope mismatch: expected {}, found {}",
+            scope_prefix(expected_scope),
+            scope_prefix(registry.scope.clone()),
+        )));
+    }
+
+    Ok(registry
+        .skills
+        .iter()
+        .find(|record| record.name == name)
+        .cloned())
 }
 
 fn normalize_record(
     record: RawSkillRecord,
     scope: SkillScope,
 ) -> Result<SkillRecord, SkillRegistryLoadError> {
+    if let Some(record_scope) = record.scope.as_deref() {
+        let record_scope = parse_scope(record_scope)?;
+        if record_scope != scope {
+            return Err(SkillRegistryLoadError::Parse(format!(
+                "scope mismatch: expected {}, found {}",
+                scope_prefix(scope),
+                scope_prefix(record_scope),
+            )));
+        }
+    }
+
     let mut normalized = SkillRecord::default_for(record.name.clone());
     normalized.trust_level = match record.trust_level.as_deref() {
         Some(value) => parse_trust_level(value)?,
@@ -131,37 +164,26 @@ fn normalize_record(
             .source
             .as_deref()
             .unwrap_or(&format!("/skills/{}", record.name)),
-        scope,
     );
     normalized.pinned_version = record.pinned_version;
     normalized.capabilities = record.capabilities;
     Ok(normalized)
 }
 
-fn normalize_resolved_record(mut record: SkillRecord, scope: SkillScope) -> SkillRecord {
-    record.source = normalize_source(&record.source, scope);
-    record
-}
-
-fn normalize_source(source: &str, scope: SkillScope) -> String {
+fn normalize_source(source: &str) -> String {
     let trimmed = source.trim();
     if trimmed.is_empty() {
-        return format!("{}:unknown", scope_prefix(scope));
+        return "local:unknown".to_string();
     }
 
     if let Some((prefix, rest)) = trimmed.split_once(':') {
         if is_scope_prefix(prefix) {
-            return format!("{}:{}", scope_prefix(scope), rest);
+            return format!("{}:{}", prefix.trim().to_ascii_lowercase(), rest);
         }
         return trimmed.to_string();
     }
 
-    let prefix = format!("{}:", scope_prefix(scope));
-    if trimmed.starts_with(&prefix) {
-        return trimmed.to_string();
-    }
-
-    format!("{prefix}{trimmed}")
+    trimmed.to_string()
 }
 
 fn parse_trust_level(value: &str) -> Result<TrustLevel, SkillRegistryLoadError> {
@@ -187,7 +209,10 @@ fn parse_scope(value: &str) -> Result<SkillScope, SkillRegistryLoadError> {
 }
 
 fn is_scope_prefix(prefix: &str) -> bool {
-    matches!(prefix, "global" | "project" | "user")
+    matches!(
+        prefix.trim().to_ascii_lowercase().as_str(),
+        "global" | "project" | "user"
+    )
 }
 
 fn scope_prefix(scope: SkillScope) -> &'static str {
