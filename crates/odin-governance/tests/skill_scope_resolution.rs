@@ -101,6 +101,94 @@ skills:
 }
 
 #[test]
+fn loader_rejects_missing_schema_version() {
+    let yaml = r#"
+scope: user
+skills:
+  - name: brainstorming
+    trust_level: trusted
+    source: /skills/brainstorming
+"#;
+
+    let err = parse_scoped_registry(yaml, SkillScope::User).expect_err("must reject");
+    assert_parse_error_contains(err, "schema_version");
+}
+
+#[test]
+fn loader_rejects_missing_scope() {
+    let yaml = r#"
+schema_version: 1
+skills:
+  - name: brainstorming
+    trust_level: trusted
+    source: /skills/brainstorming
+"#;
+
+    let err = parse_scoped_registry(yaml, SkillScope::User).expect_err("must reject");
+    assert_parse_error_contains(err, "scope");
+}
+
+#[test]
+fn loader_rejects_missing_skill_trust_level() {
+    let yaml = r#"
+schema_version: 1
+scope: user
+skills:
+  - name: brainstorming
+    source: /skills/brainstorming
+"#;
+
+    let err = parse_scoped_registry(yaml, SkillScope::User).expect_err("must reject");
+    assert_parse_error_contains(err, "trust_level");
+}
+
+#[test]
+fn loader_rejects_missing_skill_source() {
+    let yaml = r#"
+schema_version: 1
+scope: user
+skills:
+  - name: brainstorming
+    trust_level: trusted
+"#;
+
+    let err = parse_scoped_registry(yaml, SkillScope::User).expect_err("must reject");
+    assert_parse_error_contains(err, "source");
+}
+
+#[test]
+fn loader_rejects_unknown_top_level_field() {
+    let yaml = r#"
+schema_version: 1
+scope: user
+owner: root
+skills:
+  - name: brainstorming
+    trust_level: trusted
+    source: /skills/brainstorming
+"#;
+
+    let err = parse_scoped_registry(yaml, SkillScope::User).expect_err("must reject");
+    assert_parse_error_contains(err, "owner");
+}
+
+#[test]
+fn loader_rejects_unknown_skill_field() {
+    let yaml = r#"
+schema_version: 1
+scope: user
+skills:
+  - name: brainstorming
+    trust_level: trusted
+    source: /skills/brainstorming
+    extra: true
+"#;
+
+    let err = parse_scoped_registry(yaml, SkillScope::User).expect_err("must reject");
+    assert_parse_error_contains(err, "extra");
+}
+
+#[test]
 fn loader_rejects_invalid_trust_level() {
     let yaml = r#"
 schema_version: 1
@@ -161,7 +249,7 @@ skills:
 }
 
 #[test]
-fn loader_rejects_record_scope_mismatch() {
+fn loader_rejects_record_scope_field_not_in_schema() {
     let yaml = r#"
 schema_version: 1
 scope: user
@@ -172,8 +260,8 @@ skills:
     source: /skills/brainstorming
 "#;
 
-    let err = parse_scoped_registry(yaml, SkillScope::User).expect_err("must reject mismatch");
-    assert_parse_error_contains(err, "scope mismatch");
+    let err = parse_scoped_registry(yaml, SkillScope::User).expect_err("must reject");
+    assert_parse_error_contains(err, "scope");
 }
 
 fn assert_parse_error_contains(err: SkillRegistryLoadError, expected: &str) {

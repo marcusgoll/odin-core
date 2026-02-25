@@ -16,24 +16,20 @@ pub enum SkillRegistryLoadError {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawSkillRegistry {
-    #[serde(default)]
-    schema_version: Option<u32>,
-    #[serde(default)]
-    scope: Option<String>,
+    schema_version: u32,
+    scope: String,
     #[serde(default)]
     skills: Vec<RawSkillRecord>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawSkillRecord {
     name: String,
-    #[serde(default)]
-    scope: Option<String>,
-    #[serde(default)]
-    trust_level: Option<String>,
-    #[serde(default)]
-    source: Option<String>,
+    trust_level: String,
+    source: String,
     #[serde(default)]
     pinned_version: Option<String>,
     #[serde(default)]
@@ -84,22 +80,20 @@ pub fn parse_scoped_registry(
 ) -> Result<SkillRegistry, SkillRegistryLoadError> {
     let raw_registry: RawSkillRegistry =
         serde_yaml::from_str(raw).map_err(|e| SkillRegistryLoadError::Parse(e.to_string()))?;
-    let schema_version = raw_registry.schema_version.unwrap_or(1);
+    let schema_version = raw_registry.schema_version;
     if schema_version != 1 {
         return Err(SkillRegistryLoadError::Parse(format!(
             "unsupported schema_version: {schema_version}"
         )));
     }
 
-    if let Some(configured_scope) = raw_registry.scope.as_deref() {
-        let configured_scope = parse_scope(configured_scope)?;
-        if configured_scope != scope {
-            return Err(SkillRegistryLoadError::Parse(format!(
-                "scope mismatch: expected {}, found {}",
-                scope_prefix(scope.clone()),
-                scope_prefix(configured_scope),
-            )));
-        }
+    let configured_scope = parse_scope(&raw_registry.scope)?;
+    if configured_scope != scope {
+        return Err(SkillRegistryLoadError::Parse(format!(
+            "scope mismatch: expected {}, found {}",
+            scope_prefix(scope.clone()),
+            scope_prefix(configured_scope),
+        )));
     }
 
     let skills = raw_registry
@@ -141,30 +135,22 @@ fn find(
 
 fn normalize_record(
     record: RawSkillRecord,
-    scope: SkillScope,
+    _scope: SkillScope,
 ) -> Result<SkillRecord, SkillRegistryLoadError> {
-    if let Some(record_scope) = record.scope.as_deref() {
-        let record_scope = parse_scope(record_scope)?;
-        if record_scope != scope {
-            return Err(SkillRegistryLoadError::Parse(format!(
-                "scope mismatch: expected {}, found {}",
-                scope_prefix(scope),
-                scope_prefix(record_scope),
-            )));
-        }
+    if record.name.trim().is_empty() {
+        return Err(SkillRegistryLoadError::Parse(
+            "invalid name: empty".to_string(),
+        ));
+    }
+    if record.source.trim().is_empty() {
+        return Err(SkillRegistryLoadError::Parse(
+            "invalid source: empty".to_string(),
+        ));
     }
 
     let mut normalized = SkillRecord::default_for(record.name.clone());
-    normalized.trust_level = match record.trust_level.as_deref() {
-        Some(value) => parse_trust_level(value)?,
-        None => TrustLevel::Untrusted,
-    };
-    normalized.source = normalize_source(
-        record
-            .source
-            .as_deref()
-            .unwrap_or(&format!("/skills/{}", record.name)),
-    );
+    normalized.trust_level = parse_trust_level(&record.trust_level)?;
+    normalized.source = normalize_source(&record.source);
     normalized.pinned_version = record.pinned_version;
     normalized.capabilities = record.capabilities;
     Ok(normalized)
@@ -172,10 +158,6 @@ fn normalize_record(
 
 fn normalize_source(source: &str) -> String {
     let trimmed = source.trim();
-    if trimmed.is_empty() {
-        return "local:unknown".to_string();
-    }
-
     if let Some((prefix, rest)) = trimmed.split_once(':') {
         if is_scope_prefix(prefix) {
             return format!("{}:{}", prefix.trim().to_ascii_lowercase(), rest);
