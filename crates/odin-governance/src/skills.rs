@@ -75,22 +75,33 @@ pub fn parse_scoped_registry(
 ) -> Result<SkillRegistry, SkillRegistryLoadError> {
     let raw_registry: RawSkillRegistry =
         serde_yaml::from_str(raw).map_err(|e| SkillRegistryLoadError::Parse(e.to_string()))?;
+    let schema_version = raw_registry.schema_version.unwrap_or(1);
+    if schema_version != 1 {
+        return Err(SkillRegistryLoadError::Parse(format!(
+            "unsupported schema_version: {schema_version}"
+        )));
+    }
 
-    let normalized_scope = raw_registry
-        .scope
-        .as_deref()
-        .and_then(parse_scope)
-        .unwrap_or(scope);
+    if let Some(configured_scope) = raw_registry.scope.as_deref() {
+        let configured_scope = parse_scope(configured_scope)?;
+        if configured_scope != scope {
+            return Err(SkillRegistryLoadError::Parse(format!(
+                "scope mismatch: expected {}, found {}",
+                scope_prefix(scope.clone()),
+                scope_prefix(configured_scope),
+            )));
+        }
+    }
 
     let skills = raw_registry
         .skills
         .into_iter()
-        .map(|record| normalize_record(record, normalized_scope.clone()))
-        .collect();
+        .map(|record| normalize_record(record, scope.clone()))
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(SkillRegistry {
-        schema_version: raw_registry.schema_version.unwrap_or(1),
-        scope: normalized_scope,
+        schema_version,
+        scope,
         skills,
     })
 }
@@ -106,13 +117,15 @@ fn find(name: &str, registry: Option<&SkillRegistry>, scope: SkillScope) -> Opti
     })
 }
 
-fn normalize_record(record: RawSkillRecord, scope: SkillScope) -> SkillRecord {
+fn normalize_record(
+    record: RawSkillRecord,
+    scope: SkillScope,
+) -> Result<SkillRecord, SkillRegistryLoadError> {
     let mut normalized = SkillRecord::default_for(record.name.clone());
-    normalized.trust_level = record
-        .trust_level
-        .as_deref()
-        .map(parse_trust_level)
-        .unwrap_or(TrustLevel::Untrusted);
+    normalized.trust_level = match record.trust_level.as_deref() {
+        Some(value) => parse_trust_level(value)?,
+        None => TrustLevel::Untrusted,
+    };
     normalized.source = normalize_source(
         record
             .source
@@ -122,7 +135,7 @@ fn normalize_record(record: RawSkillRecord, scope: SkillScope) -> SkillRecord {
     );
     normalized.pinned_version = record.pinned_version;
     normalized.capabilities = record.capabilities;
-    normalized
+    Ok(normalized)
 }
 
 fn normalize_resolved_record(mut record: SkillRecord, scope: SkillScope) -> SkillRecord {
@@ -136,29 +149,45 @@ fn normalize_source(source: &str, scope: SkillScope) -> String {
         return format!("{}:unknown", scope_prefix(scope));
     }
 
+    if let Some((prefix, rest)) = trimmed.split_once(':') {
+        if is_scope_prefix(prefix) {
+            return format!("{}:{}", scope_prefix(scope), rest);
+        }
+        return trimmed.to_string();
+    }
+
     let prefix = format!("{}:", scope_prefix(scope));
-    if trimmed.starts_with(&prefix) || trimmed.contains(':') {
+    if trimmed.starts_with(&prefix) {
         return trimmed.to_string();
     }
 
     format!("{prefix}{trimmed}")
 }
 
-fn parse_trust_level(value: &str) -> TrustLevel {
+fn parse_trust_level(value: &str) -> Result<TrustLevel, SkillRegistryLoadError> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "trusted" => TrustLevel::Trusted,
-        "caution" => TrustLevel::Caution,
-        _ => TrustLevel::Untrusted,
+        "trusted" => Ok(TrustLevel::Trusted),
+        "caution" => Ok(TrustLevel::Caution),
+        "untrusted" => Ok(TrustLevel::Untrusted),
+        other => Err(SkillRegistryLoadError::Parse(format!(
+            "invalid trust_level: {other}"
+        ))),
     }
 }
 
-fn parse_scope(value: &str) -> Option<SkillScope> {
+fn parse_scope(value: &str) -> Result<SkillScope, SkillRegistryLoadError> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "global" => Some(SkillScope::Global),
-        "project" => Some(SkillScope::Project),
-        "user" => Some(SkillScope::User),
-        _ => None,
+        "global" => Ok(SkillScope::Global),
+        "project" => Ok(SkillScope::Project),
+        "user" => Ok(SkillScope::User),
+        other => Err(SkillRegistryLoadError::Parse(format!(
+            "invalid scope: {other}"
+        ))),
     }
+}
+
+fn is_scope_prefix(prefix: &str) -> bool {
+    matches!(prefix, "global" | "project" | "user")
 }
 
 fn scope_prefix(scope: SkillScope) -> &'static str {
