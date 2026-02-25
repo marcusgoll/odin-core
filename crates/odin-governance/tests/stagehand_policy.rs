@@ -186,6 +186,23 @@ fn stagehand_denies_command_with_relative_parent_traversal() {
 }
 
 #[test]
+fn stagehand_denies_unscoped_relative_command_arg_when_workspace_boundaries_active() {
+    let policy = stagehand_default_policy()
+        .with_enabled(true)
+        .with_commands(["cat"])
+        .with_workspaces(["/home/orchestrator/odin-core"]);
+
+    let decision = policy.evaluate(Action::RunCommand("cat docs/plan.md".to_string()));
+
+    assert_eq!(
+        decision,
+        PermissionDecision::Deny {
+            reason_code: "command_relative_path_unscoped".to_string()
+        }
+    );
+}
+
+#[test]
 fn stagehand_untrusted_envelope_cannot_enable_plugin() {
     let envelope = PluginPermissionEnvelope {
         plugin: "stagehand".to_string(),

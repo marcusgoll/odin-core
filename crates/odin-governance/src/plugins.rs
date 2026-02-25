@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
+use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use odin_plugin_protocol::{DelegationCapability, PluginPermissionEnvelope, TrustLevel};
@@ -168,6 +169,10 @@ impl StagehandPolicy {
             return deny("command_relative_path_traversal");
         }
 
+        if !self.allowed_workspaces.is_empty() && has_unscoped_relative_path(&args) {
+            return deny("command_relative_path_unscoped");
+        }
+
         if first_absolute_path_outside_workspaces(&args, &self.allowed_workspaces).is_some() {
             return deny("command_path_outside_allowlisted_workspace");
         }
@@ -176,13 +181,13 @@ impl StagehandPolicy {
     }
 
     fn is_workspace_allowlisted(&self, workspace: &str) -> bool {
-        let Some(candidate) = normalize_lexical_path(Path::new(workspace)) else {
+        let Some(candidate) = normalize_boundary_path(Path::new(workspace)) else {
             return false;
         };
 
         self.allowed_workspaces
             .iter()
-            .filter_map(|allowed| normalize_lexical_path(Path::new(allowed)))
+            .filter_map(|allowed| normalize_boundary_path(Path::new(allowed)))
             .any(|allowed| candidate == allowed || candidate.starts_with(&allowed))
     }
 }
@@ -358,7 +363,7 @@ fn normalize_workspace(workspace: &str) -> Option<String> {
 
     let path = Path::new(trimmed);
     if path.is_absolute() {
-        return normalize_lexical_path(path).map(pathbuf_to_string);
+        return normalize_boundary_path(path).map(pathbuf_to_string);
     }
 
     Some(trimmed.to_string())
@@ -387,13 +392,13 @@ fn first_absolute_path_outside_workspaces(
 ) -> Option<String> {
     for arg in args {
         if let Some(path) = extract_absolute_path(arg) {
-            let Some(path_obj) = normalize_lexical_path(Path::new(&path)) else {
+            let Some(path_obj) = normalize_boundary_path(Path::new(&path)) else {
                 return Some(path);
             };
 
             let in_allowed_workspace = allowed_workspaces
                 .iter()
-                .filter_map(|workspace| normalize_lexical_path(Path::new(workspace)))
+                .filter_map(|workspace| normalize_boundary_path(Path::new(workspace)))
                 .any(|workspace| path_obj == workspace || path_obj.starts_with(&workspace));
             if !in_allowed_workspace {
                 return Some(path);
@@ -462,6 +467,35 @@ fn has_relative_parent_segment(token: &str) -> bool {
             .any(|component| matches!(component, Component::ParentDir))
 }
 
+fn has_unscoped_relative_path(args: &[String]) -> bool {
+    args.iter().any(|arg| {
+        if arg.starts_with('-') {
+            return false;
+        }
+
+        let candidate = arg
+            .split_once('=')
+            .map(|(_, value)| value)
+            .unwrap_or(arg.as_str())
+            .trim();
+        if candidate.is_empty() {
+            return false;
+        }
+
+        !Path::new(candidate).is_absolute()
+    })
+}
+
+fn normalize_boundary_path(path: &Path) -> Option<PathBuf> {
+    if path.is_absolute() {
+        if let Ok(canonical) = fs::canonicalize(path) {
+            return Some(canonical);
+        }
+    }
+
+    normalize_lexical_path(path)
+}
+
 fn normalize_lexical_path(path: &Path) -> Option<PathBuf> {
     let mut prefix: Option<OsString> = None;
     let mut has_root = false;
@@ -524,6 +558,8 @@ fn pathbuf_to_string(path: PathBuf) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn default_policy_denies_when_disabled() {
@@ -594,5 +630,40 @@ mod tests {
                 reason_code: "domain_allowlisted".to_string()
             }
         );
+    }
+
+    #[test]
+    fn boundary_path_uses_canonical_path_when_target_exists() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("odin-governance-path-existing-{unique}"));
+        let leaf = root.join("allowed");
+
+        fs::create_dir_all(&leaf).expect("create temp tree");
+
+        let input = root.join("allowed").join("..").join("allowed");
+        let expected = fs::canonicalize(&leaf).expect("canonical leaf");
+        let actual = normalize_boundary_path(&input).expect("normalize");
+
+        assert_eq!(actual, expected);
+
+        fs::remove_dir_all(&root).expect("cleanup");
+    }
+
+    #[test]
+    fn boundary_path_falls_back_to_lexical_normalization_when_missing() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("odin-governance-path-missing-{unique}"));
+        let input = root.join("allowed").join("..").join("outside");
+
+        let actual = normalize_boundary_path(&input).expect("normalize");
+        let expected = root.join("outside");
+
+        assert_eq!(actual, expected);
     }
 }
