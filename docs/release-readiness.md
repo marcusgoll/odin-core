@@ -20,13 +20,14 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 bash scripts/verify/compat-regression.sh --legacy-root /home/orchestrator/cfipros
 bash scripts/verify/quickstart-smoke.sh
+bash scripts/verify/tui-core-smoke.sh
 bash scripts/verify/plugin-install-matrix.sh
 ```
 
 ## Quickstart Gate
 
 - One-path quickstart validated via `scripts/verify/quickstart-smoke.sh`.
-- Includes compose config validation (when Docker is available), CLI bootstrap, and watchdog plugin bridge smoke.
+- Includes compose config validation (when Docker is available), wrapper command contract checks (`connect/start/tui/inbox/verify` dry-run), first inbox normalization fields (`title/raw_text/source/timestamp`), CLI bootstrap, and watchdog plugin bridge smoke.
 
 ## Plugin Install Gate
 
