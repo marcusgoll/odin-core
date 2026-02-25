@@ -316,6 +316,33 @@ skills:
     assert_parse_error_contains(err, "capability id");
 }
 
+#[test]
+fn loader_rejects_duplicate_skill_names() {
+    let yaml = r#"
+schema_version: 1
+scope: user
+skills:
+  - name: brainstorming
+    trust_level: trusted
+    source: /skills/brainstorming
+  - name: "brainstorming   "
+    trust_level: caution
+    source: /skills/brainstorming-v2
+"#;
+
+    let err = parse_scoped_registry(yaml, SkillScope::User).expect_err("must reject");
+    assert_parse_error_contains(err, "duplicate skill name");
+}
+
+#[test]
+fn resolver_trims_lookup_name() {
+    let resolved = resolve_skill("brainstorming   ", Some(&user_registry()), None, None)
+        .expect("resolve should succeed")
+        .expect("resolved");
+
+    assert_eq!(resolved.name, "brainstorming");
+}
+
 fn assert_parse_error_contains(err: SkillRegistryLoadError, expected: &str) {
     match err {
         SkillRegistryLoadError::Parse(message) => {

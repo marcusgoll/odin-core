@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
@@ -50,6 +51,11 @@ pub fn resolve_skill(
     project: Option<&SkillRegistry>,
     global: Option<&SkillRegistry>,
 ) -> Result<Option<SkillRecord>, SkillRegistryLoadError> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Ok(None);
+    }
+
     if let Some(record) = find(name, user, SkillScope::User)? {
         return Ok(Some(record));
     }
@@ -109,6 +115,7 @@ pub fn parse_scoped_registry(
         .into_iter()
         .map(|record| normalize_record(record, scope.clone()))
         .collect::<Result<Vec<_>, _>>()?;
+    ensure_unique_skill_names(&skills)?;
 
     Ok(SkillRegistry {
         schema_version,
@@ -183,6 +190,19 @@ fn normalize_capability(
         id: id.to_string(),
         scope: capability.scope,
     })
+}
+
+fn ensure_unique_skill_names(skills: &[SkillRecord]) -> Result<(), SkillRegistryLoadError> {
+    let mut seen = HashSet::new();
+    for skill in skills {
+        if !seen.insert(skill.name.clone()) {
+            return Err(SkillRegistryLoadError::Parse(format!(
+                "duplicate skill name: {}",
+                skill.name
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn normalize_source(source: &str) -> String {
