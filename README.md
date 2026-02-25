@@ -15,6 +15,26 @@ docker compose up -d
 cargo run -p odin-cli -- --config config/default.yaml
 ```
 
+## TUI Dashboard
+
+Install dependency once:
+
+```bash
+python3 -m pip install rich
+```
+
+Run from core repo:
+
+```bash
+python3 scripts/odin/odin-tui.py --live
+```
+
+Wrapper command:
+
+```bash
+bash scripts/odin/odin-tui --live
+```
+
 ## Watchdog task bridge (compat canary)
 
 Process one compat `watchdog_poll` task through plugin policy/execution path:

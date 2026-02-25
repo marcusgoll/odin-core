@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# odin-tui — Cross-platform launcher for the Odin TUI dashboard.
+#
+# Works on:
+#   - Homelab server (runs directly)
+#   - macOS / Linux / Windows (Git Bash/WSL) — runs locally with ODIN_DIR override,
+#     or SSHs to server when --remote flag is passed
+#
+# Usage:
+#   odin-tui                One-shot snapshot (local ODIN_DIR or auto-detect)
+#   odin-tui --live         Live dashboard (5s refresh, Ctrl+C to exit)
+#   odin-tui --json         Raw JSON output
+#   odin-tui --remote       Force SSH to homelab server
+#
+# Config (env vars):
+#   ODIN_DIR                Override data directory (default: /var/odin)
+#   ODIN_REMOTE_HOST        SSH host alias (required for --remote)
+#   ODIN_REMOTE_REPO        Repo path on server (required for --remote)
+
+set -euo pipefail
+
+REMOTE_HOST="${ODIN_REMOTE_HOST:-}"
+REMOTE_REPO="${ODIN_REMOTE_REPO:-}"
+REMOTE_SCRIPT=""
+
+# ── Resolve the TUI Python script ────────────────────────
+# Follow symlinks to find the real script location
+_find_tui_script() {
+    local source="${BASH_SOURCE[0]}"
+    while [[ -L "${source}" ]]; do
+        local dir
+        dir="$(cd -P "$(dirname "${source}")" && pwd)"
+        source="$(readlink "${source}")"
+        [[ "${source}" != /* ]] && source="${dir}/${source}"
+    done
+    local script_dir
+    script_dir="$(cd -P "$(dirname "${source}")" && pwd)"
+    echo "${script_dir}/odin-tui.py"
+}
+
+# ── Check for --remote flag ───────────────────────────────
+REMOTE_MODE=false
+PASSTHROUGH_ARGS=()
+for arg in "$@"; do
+    if [[ "${arg}" == "--remote" ]]; then
+        REMOTE_MODE=true
+    else
+        PASSTHROUGH_ARGS+=("${arg}")
+    fi
+done
+
+# ── Remote mode: SSH to server ────────────────────────────
+if [[ "${REMOTE_MODE}" == true ]]; then
+    if [[ -z "${REMOTE_HOST}" || -z "${REMOTE_REPO}" ]]; then
+        echo "ERROR: --remote requires ODIN_REMOTE_HOST and ODIN_REMOTE_REPO" >&2
+        exit 64
+    fi
+    REMOTE_SCRIPT="${REMOTE_REPO}/scripts/odin/odin-tui.py"
+
+    # Forward local terminal size so the TUI renders responsively
+    local_cols="$(tput cols 2>/dev/null || echo 80)"
+    local_lines="$(tput lines 2>/dev/null || echo 24)"
+    exec ssh -t "${REMOTE_HOST}" \
+        "bash -lc 'export COLUMNS=${local_cols} LINES=${local_lines}; cd ${REMOTE_REPO@Q} && stty cols ${local_cols} rows ${local_lines} 2>/dev/null || true; python3 ${REMOTE_SCRIPT@Q} ${PASSTHROUGH_ARGS[*]+${PASSTHROUGH_ARGS[*]}}'"
+fi
+
+# ── Local mode: run the Python script directly ───────────
+TUI_SCRIPT="$(_find_tui_script)"
+
+if [[ ! -f "${TUI_SCRIPT}" ]]; then
+    echo "ERROR: odin-tui.py not found at ${TUI_SCRIPT}" >&2
+    echo "  If Odin is on a remote server, use: odin-tui --remote" >&2
+    exit 1
+fi
+
+if [[ ${#PASSTHROUGH_ARGS[@]} -gt 0 ]]; then
+    exec python3 "${TUI_SCRIPT}" "${PASSTHROUGH_ARGS[@]}"
+else
+    exec python3 "${TUI_SCRIPT}"
+fi
