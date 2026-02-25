@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
-from tui_core.formatting import compact_relative_age, parse_iso_timestamp
+from tui_core.formatting import parse_iso_timestamp
 from tui_core.models import PanelData
 
 LOG_SOURCES = [
@@ -21,6 +21,7 @@ LOG_SOURCES = [
 ]
 
 TIMESTAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+\-]\d{2}:\d{2})")
+MAX_LINES_PER_SOURCE = 32
 
 
 def _extract_structured_line(line: str) -> tuple[str | None, str]:
@@ -63,40 +64,56 @@ def _extract_text_with_timestamp(line: str) -> tuple[str | None, str]:
     return timestamp, text
 
 
-def _relative_age(ts_value: str | None, now: datetime) -> str:
+def _display_time(ts_value: str | None) -> str:
     parsed = parse_iso_timestamp(ts_value)
     if parsed is None:
         return "n/a"
-    return compact_relative_age((now - parsed).total_seconds())
+    return parsed.strftime("%H:%M:%S")
 
 
 def collect(odin_dir: Path, limit: int = 30) -> PanelData:
     today = datetime.now().strftime("%Y-%m-%d")
     log_dir = odin_dir / "logs" / today
 
-    entries: list[dict] = []
-    now = datetime.now(timezone.utc)
+    scanned: list[dict] = []
+    seq = 0
     if log_dir.exists():
         for name in LOG_SOURCES:
             path = log_dir / name
             if not path.exists() or not path.is_file():
                 continue
             try:
-                lines = path.read_text(errors="replace").splitlines()[-8:]
+                lines = path.read_text(errors="replace").splitlines()[-MAX_LINES_PER_SOURCE:]
             except OSError:
                 continue
             for raw in lines:
                 ts, text = _extract_structured_line(raw)
                 if not text:
                     continue
-                entries.append({
-                    "source": name,
-                    "ts": ts or "",
-                    "ago": _relative_age(ts, now),
-                    "message": text,
-                })
+                parsed = parse_iso_timestamp(ts)
+                scanned.append(
+                    {
+                        "_seq": seq,
+                        "_epoch": parsed.timestamp() if parsed is not None else -1.0,
+                        "_has_ts": 1 if parsed is not None else 0,
+                        "source": name,
+                        "ts": ts or "",
+                        "time": _display_time(ts),
+                        "message": text,
+                    }
+                )
+                seq += 1
 
-    entries = entries[-limit:]
+    scanned.sort(key=lambda row: (row["_has_ts"], row["_epoch"], row["_seq"]))
+    entries = [
+        {
+            "source": row["source"],
+            "ts": row["ts"],
+            "time": row["time"],
+            "message": row["message"],
+        }
+        for row in scanned[-limit:]
+    ]
     status = "ok" if entries else "warn"
     return PanelData(
         key="logs",

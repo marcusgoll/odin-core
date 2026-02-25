@@ -41,6 +41,11 @@ def _task_preview(task: dict) -> str:
     return "Task"
 
 
+def _task_previews(tasks: list[dict], limit: int = 8) -> list[str]:
+    previews = [_task_preview(task) for task in tasks]
+    return previews[:limit]
+
+
 def _summarize_columns(board: dict) -> list[dict]:
     columns = board.get("columns")
     result: list[dict] = []
@@ -50,6 +55,7 @@ def _summarize_columns(board: dict) -> list[dict]:
             tasks = _tasks_from_value(value)
             count = len(tasks)
             limit = int(value.get("wip_limit", 0)) if isinstance(value, dict) else 0
+            previews = _task_previews(tasks)
             result.append(
                 {
                     "column": str(name),
@@ -57,7 +63,8 @@ def _summarize_columns(board: dict) -> list[dict]:
                     "wip_limit": limit,
                     "wip": f"{count}/{limit}" if limit > 0 else f"{count}/-",
                     "wip_state": wip_state(count, limit),
-                    "top_tasks": [_task_preview(task) for task in tasks[:3]],
+                    "tasks": previews,
+                    "top_tasks": previews[:3],
                 }
             )
 
@@ -69,6 +76,7 @@ def _summarize_columns(board: dict) -> list[dict]:
             tasks = _tasks_from_value(col)
             count = len(tasks)
             limit = int(col.get("wip_limit", 0)) if col.get("wip_limit") is not None else 0
+            previews = _task_previews(tasks)
             result.append(
                 {
                     "column": str(name),
@@ -76,7 +84,8 @@ def _summarize_columns(board: dict) -> list[dict]:
                     "wip_limit": limit,
                     "wip": f"{count}/{limit}" if limit > 0 else f"{count}/-",
                     "wip_state": wip_state(count, limit),
-                    "top_tasks": [_task_preview(task) for task in tasks[:3]],
+                    "tasks": previews,
+                    "top_tasks": previews[:3],
                 }
             )
 

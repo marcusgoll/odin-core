@@ -7,12 +7,18 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
 
+from rich.columns import Columns
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from tui_core.collectors.inbox import collect as collect_inbox  # noqa: E402
 from tui_core.collectors.kanban import collect as collect_kanban  # noqa: E402
 from tui_core.collectors.logs import collect as collect_logs  # noqa: E402
 from tui_core.formatting import compact_relative_age, task_label_for_type, wip_state  # noqa: E402
+from tui_core.models import PanelData  # noqa: E402
+from tui_core.panels.inbox import render as render_inbox  # noqa: E402
+from tui_core.panels.kanban import render as render_kanban  # noqa: E402
+from tui_core.panels.logs import render as render_logs  # noqa: E402
 
 
 class FormattingTests(unittest.TestCase):
@@ -80,21 +86,74 @@ class CollectorReadabilityTests(unittest.TestCase):
             self.assertIn("wip", row)
             self.assertIn("wip_state", row)
             self.assertIn("top_tasks", row)
+            self.assertIn("tasks", row)
             self.assertTrue(row["top_tasks"])
 
-    def test_logs_collect_has_relative_time(self):
+    def test_logs_collect_streams_with_timestamp_not_relative_age(self):
         with tempfile.TemporaryDirectory() as tmp:
             odin_dir = Path(tmp)
             log_dir = odin_dir / "logs" / datetime.now().strftime("%Y-%m-%d")
             log_dir.mkdir(parents=True)
-            ts = (datetime.now(timezone.utc) - timedelta(seconds=75)).isoformat()
+            older = (datetime.now(timezone.utc) - timedelta(seconds=75)).isoformat()
+            newer = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
             (log_dir / "events.jsonl").write_text(
-                json.dumps({"ts": ts, "event_type": "task.received", "message": "queued"}) + "\n"
+                json.dumps({"ts": newer, "event_type": "task.received", "message": "queued"}) + "\n"
+            )
+            (log_dir / "alerts.log").write_text(
+                f"[{older}] RECEIVED n8n_failure severity=warning project=cfipros\n"
             )
             data = collect_logs(odin_dir)
             self.assertTrue(data.items)
-            self.assertIn("ago", data.items[0])
-            self.assertTrue(data.items[0]["ago"].endswith("ago"))
+            self.assertIn("time", data.items[0])
+            self.assertNotIn("ago", data.items[0])
+            self.assertEqual(data.items[-1]["message"], "task.received: queued")
+            self.assertNotEqual(data.items[-1]["time"], "n/a")
+
+
+class PanelReadabilityTests(unittest.TestCase):
+    def test_inbox_panel_uses_three_columns(self):
+        panel = render_inbox(
+            PanelData(
+                key="inbox",
+                title="Inbox",
+                status="ok",
+                items=[{"task_label": "Dispatch Work", "type": "dispatch_work", "source": "cron", "age": "10s ago"}],
+                meta={"pending": 1},
+                errors=[],
+            )
+        )
+        headers = [column.header for column in panel.renderable.columns]
+        self.assertEqual(headers, ["Task", "Source", "Age"])
+
+    def test_logs_panel_uses_time_column(self):
+        panel = render_logs(
+            PanelData(
+                key="logs",
+                title="Logs",
+                status="ok",
+                items=[{"time": "15:30:00", "source": "events.jsonl", "message": "task.received: queued"}],
+                meta={},
+                errors=[],
+            )
+        )
+        headers = [column.header for column in panel.renderable.columns]
+        self.assertEqual(headers, ["Time", "Source", "Message"])
+
+    def test_kanban_panel_renders_lane_columns(self):
+        panel = render_kanban(
+            PanelData(
+                key="kanban",
+                title="Kanban",
+                status="ok",
+                items=[
+                    {"column": "ready", "wip": "1/3", "wip_state": "ok", "tasks": ["Prepare release notes"]},
+                    {"column": "in_progress", "wip": "2/4", "wip_state": "ok", "tasks": ["Fix flaky test"]},
+                ],
+                meta={"total_tasks": 3},
+                errors=[],
+            )
+        )
+        self.assertIsInstance(panel.renderable, Columns)
 
 
 if __name__ == "__main__":
