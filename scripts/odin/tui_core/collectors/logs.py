@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+import re
+from datetime import datetime, timezone
 from pathlib import Path
 
+from tui_core.formatting import compact_relative_age, parse_iso_timestamp
 from tui_core.models import PanelData
 
 LOG_SOURCES = [
@@ -18,20 +20,54 @@ LOG_SOURCES = [
     "ssh-dispatch.log",
 ]
 
+TIMESTAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+\-]\d{2}:\d{2})")
 
-def _extract_text(line: str) -> str:
+
+def _extract_structured_line(line: str) -> tuple[str | None, str]:
     line = line.strip()
     if not line:
-        return ""
+        return None, ""
+
     if line.startswith("{") and line.endswith("}"):
         try:
             payload = json.loads(line)
-            event = payload.get("event") or payload.get("event_type") or "event"
+            ts = payload.get("ts") or payload.get("timestamp") or payload.get("time")
+            event = payload.get("event") or payload.get("event_type") or payload.get("msg")
             msg = payload.get("message") or payload.get("detail") or payload.get("task_id") or ""
-            return f"{event}: {msg}".strip()
+            if event and msg:
+                text = f"{event}: {msg}"
+            else:
+                text = str(event or msg or "event")
+            return str(ts) if ts else None, text.strip()
         except json.JSONDecodeError:
-            return line
-    return line
+            return _extract_text_with_timestamp(line)
+
+    return _extract_text_with_timestamp(line)
+
+
+def _extract_text_with_timestamp(line: str) -> tuple[str | None, str]:
+    match = TIMESTAMP_RE.search(line)
+    if not match:
+        return None, line
+
+    timestamp = match.group(0)
+    left = line[: match.start()].strip()
+    right = line[match.end() :].strip()
+
+    if left and right:
+        text = f"{left} {right}".strip()
+    else:
+        text = left or right or line
+    text = re.sub(r"^\[\s*\]\s*", "", text)
+    text = re.sub(r"\s{2,}", " ", text).strip()
+    return timestamp, text
+
+
+def _relative_age(ts_value: str | None, now: datetime) -> str:
+    parsed = parse_iso_timestamp(ts_value)
+    if parsed is None:
+        return "n/a"
+    return compact_relative_age((now - parsed).total_seconds())
 
 
 def collect(odin_dir: Path, limit: int = 30) -> PanelData:
@@ -39,6 +75,7 @@ def collect(odin_dir: Path, limit: int = 30) -> PanelData:
     log_dir = odin_dir / "logs" / today
 
     entries: list[dict] = []
+    now = datetime.now(timezone.utc)
     if log_dir.exists():
         for name in LOG_SOURCES:
             path = log_dir / name
@@ -49,11 +86,13 @@ def collect(odin_dir: Path, limit: int = 30) -> PanelData:
             except OSError:
                 continue
             for raw in lines:
-                text = _extract_text(raw)
+                ts, text = _extract_structured_line(raw)
                 if not text:
                     continue
                 entries.append({
                     "source": name,
+                    "ts": ts or "",
+                    "ago": _relative_age(ts, now),
                     "message": text,
                 })
 

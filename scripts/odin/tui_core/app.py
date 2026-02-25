@@ -173,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
         return _render_core(data, profile, width, height)
 
     if args.live:
-        with Live(build_renderable(), console=console, refresh_per_second=4, screen=False) as live:
+        with Live(build_renderable(), console=console, refresh_per_second=2, screen=True) as live:
             try:
                 while True:
                     time.sleep(refresh_seconds)
