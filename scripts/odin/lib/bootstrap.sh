@@ -42,6 +42,21 @@ odin_bootstrap_has_dry_run() {
   odin_bootstrap_has_flag "--dry-run" "$@"
 }
 
+odin_bootstrap_reject_unknown_flags() {
+  local action="$1"
+  shift || true
+
+  local arg
+  for arg in "$@"; do
+    if [[ "${arg}" == -* && "${arg}" != "--dry-run" ]]; then
+      odin_bootstrap_err "${action}: unknown flag '${arg}'"
+      return 64
+    fi
+  done
+
+  return 0
+}
+
 odin_bootstrap_guardrails_path() {
   if [[ -n "${ODIN_GUARDRAILS_PATH:-}" ]]; then
     echo "${ODIN_GUARDRAILS_PATH}"
@@ -81,7 +96,19 @@ odin_bootstrap_cmd_connect() {
     return 64
   fi
 
-  odin_bootstrap_require_guardrails_or_dry_run "connect" "${args[@]}"
+  if odin_bootstrap_reject_unknown_flags "connect" "${args[@]}"; then
+    :
+  else
+    local rc=$?
+    return "${rc}"
+  fi
+
+  if odin_bootstrap_require_guardrails_or_dry_run "connect" "${args[@]}"; then
+    :
+  else
+    local rc=$?
+    return "${rc}"
+  fi
 
   if odin_bootstrap_has_dry_run "${args[@]}"; then
     odin_bootstrap_info "DRY-RUN connect provider=${provider} auth=${auth_mode}"
@@ -93,7 +120,19 @@ odin_bootstrap_cmd_connect() {
 
 odin_bootstrap_cmd_start() {
   local args=("$@")
-  odin_bootstrap_require_guardrails_or_dry_run "start" "${args[@]}"
+  if odin_bootstrap_reject_unknown_flags "start" "${args[@]}"; then
+    :
+  else
+    local rc=$?
+    return "${rc}"
+  fi
+
+  if odin_bootstrap_require_guardrails_or_dry_run "start" "${args[@]}"; then
+    :
+  else
+    local rc=$?
+    return "${rc}"
+  fi
 
   if odin_bootstrap_has_dry_run "${args[@]}"; then
     odin_bootstrap_info "DRY-RUN start"
@@ -105,7 +144,19 @@ odin_bootstrap_cmd_start() {
 
 odin_bootstrap_cmd_tui() {
   local args=("$@")
-  odin_bootstrap_require_guardrails_or_dry_run "tui" "${args[@]}"
+  if odin_bootstrap_reject_unknown_flags "tui" "${args[@]}"; then
+    :
+  else
+    local rc=$?
+    return "${rc}"
+  fi
+
+  if odin_bootstrap_require_guardrails_or_dry_run "tui" "${args[@]}"; then
+    :
+  else
+    local rc=$?
+    return "${rc}"
+  fi
 
   if odin_bootstrap_has_dry_run "${args[@]}"; then
     odin_bootstrap_info "DRY-RUN tui"
@@ -120,7 +171,19 @@ odin_bootstrap_cmd_inbox_add() {
   shift
   local args=("$@")
 
-  odin_bootstrap_require_guardrails_or_dry_run "inbox add" "${args[@]}"
+  if odin_bootstrap_reject_unknown_flags "inbox add" "${args[@]}"; then
+    :
+  else
+    local rc=$?
+    return "${rc}"
+  fi
+
+  if odin_bootstrap_require_guardrails_or_dry_run "inbox add" "${args[@]}"; then
+    :
+  else
+    local rc=$?
+    return "${rc}"
+  fi
 
   if odin_bootstrap_has_dry_run "${args[@]}"; then
     odin_bootstrap_info "DRY-RUN inbox add title=${title}"
@@ -137,12 +200,45 @@ odin_bootstrap_cmd_inbox_list() {
   odin_bootstrap_info "inbox list placeholder (empty)"
 }
 
+odin_bootstrap_validate_gateway_source() {
+  local source="$1"
+
+  case "${source}" in
+    cli|slack|telegram)
+      return 0
+      ;;
+    *)
+      odin_bootstrap_err "gateway add source must be one of: cli, slack, telegram"
+      return 64
+      ;;
+  esac
+}
+
 odin_bootstrap_cmd_gateway_add() {
   local gateway="$1"
   shift
   local args=("$@")
 
-  odin_bootstrap_require_guardrails_or_dry_run "gateway add" "${args[@]}"
+  if odin_bootstrap_validate_gateway_source "${gateway}"; then
+    :
+  else
+    local rc=$?
+    return "${rc}"
+  fi
+
+  if odin_bootstrap_reject_unknown_flags "gateway add" "${args[@]}"; then
+    :
+  else
+    local rc=$?
+    return "${rc}"
+  fi
+
+  if odin_bootstrap_require_guardrails_or_dry_run "gateway add" "${args[@]}"; then
+    :
+  else
+    local rc=$?
+    return "${rc}"
+  fi
 
   if odin_bootstrap_has_dry_run "${args[@]}"; then
     odin_bootstrap_info "DRY-RUN gateway add source=${gateway}"
@@ -154,6 +250,14 @@ odin_bootstrap_cmd_gateway_add() {
 
 odin_bootstrap_cmd_verify() {
   local args=("$@")
+
+  if odin_bootstrap_reject_unknown_flags "verify" "${args[@]}"; then
+    :
+  else
+    local rc=$?
+    return "${rc}"
+  fi
+
   if odin_bootstrap_has_dry_run "${args[@]}"; then
     odin_bootstrap_info "DRY-RUN verify"
     return 0
@@ -203,6 +307,10 @@ odin_bootstrap_dispatch() {
           ;;
         list)
           shift
+          if [[ $# -ne 0 ]]; then
+            odin_bootstrap_err "usage: odin inbox list"
+            return 64
+          fi
           odin_bootstrap_cmd_inbox_list "$@"
           ;;
         *)
