@@ -29,6 +29,13 @@ _odin_mode_state_with_lock() {
   local path="$1"
   shift
   local lock_path="${path}.lock"
+  local lock_parent
+  lock_parent="$(dirname "${lock_path}")"
+
+  if ! mkdir -p "${lock_parent}" 2>/dev/null; then
+    _odin_mode_state_err "unable to create lock directory ${lock_parent}"
+    return 1
+  fi
 
   if command -v flock >/dev/null 2>&1; then
     local lock_fd

@@ -126,6 +126,26 @@ if (( cli_confidence < 60 )); then
 fi
 echo "[mode-confidence] PASS cli confidence=${cli_confidence}"
 
+echo "[mode-confidence] RUN explicit nested custom ODIN_MODE_STATE_PATH"
+nested_state_path="${TMP_DIR}/nested/custom/path/state.json"
+rm -rf "${TMP_DIR}/nested"
+env \
+  ODIN_MODE_STATE_PATH="${nested_state_path}" \
+  ODIN_GUARDRAILS_PATH="${CLI_GUARDRAILS_PATH}" \
+  ODIN_GUARDRAILS_ACK=yes \
+  scripts/odin/odin connect claude oauth --confirm >/dev/null
+if [[ ! -f "${nested_state_path}" ]]; then
+  echo "[mode-confidence] ERROR expected nested custom state file to be created: ${nested_state_path}" >&2
+  exit 1
+fi
+export ODIN_MODE_STATE_PATH="${nested_state_path}"
+nested_confidence="$(odin_mode_state_get confidence)"
+if (( nested_confidence <= 10 )); then
+  echo "[mode-confidence] ERROR expected nested custom state confidence increase, got ${nested_confidence}" >&2
+  exit 1
+fi
+echo "[mode-confidence] PASS nested custom path created confidence=${nested_confidence}"
+
 echo "[mode-confidence] RUN state write failure propagation"
 readonly_state_path="${READONLY_STATE_DIR}/state.json"
 readonly_err_file="$(mktemp "${TMP_DIR}/readonly.err.XXXXXX")"

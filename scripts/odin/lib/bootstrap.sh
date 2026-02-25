@@ -5,6 +5,7 @@ ODIN_BOOTSTRAP_ROOT_DIR="$(cd "${ODIN_BOOTSTRAP_LIB_DIR}/../../.." && pwd)"
 ODIN_BOOTSTRAP_GUARDRAILS_DEFAULT="${ODIN_BOOTSTRAP_ROOT_DIR}/config/guardrails.yaml"
 ODIN_BOOTSTRAP_GUARDRAILS_OVERRIDE=""
 ODIN_BOOTSTRAP_GUARDRAILS_LAST_ERROR=""
+ODIN_BOOTSTRAP_MODE_STATE_LAST_ERROR=""
 ODIN_BOOTSTRAP_MODE_STATE_LIB="${ODIN_BOOTSTRAP_LIB_DIR}/mode_state.sh"
 
 if [[ -f "${ODIN_BOOTSTRAP_MODE_STATE_LIB}" ]]; then
@@ -38,11 +39,39 @@ odin_bootstrap_mode_state_available() {
   declare -F odin_mode_state_init >/dev/null 2>&1
 }
 
+odin_bootstrap_mode_state_format_reason() {
+  local raw="$1"
+  raw="${raw//$'\r'/ }"
+  raw="$(printf '%s' "${raw}" | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//')"
+  printf '%s' "${raw}"
+}
+
+odin_bootstrap_mode_state_call() {
+  ODIN_BOOTSTRAP_MODE_STATE_LAST_ERROR=""
+  local mode_state_err=""
+  local rc=0
+  if mode_state_err="$({ "$@" >/dev/null; } 2>&1)"; then
+    return 0
+  else
+    rc=$?
+  fi
+
+  ODIN_BOOTSTRAP_MODE_STATE_LAST_ERROR="$(odin_bootstrap_mode_state_format_reason "${mode_state_err}")"
+  return "${rc}"
+}
+
+odin_bootstrap_mode_state_reason_suffix() {
+  if [[ -z "${ODIN_BOOTSTRAP_MODE_STATE_LAST_ERROR:-}" ]]; then
+    return 0
+  fi
+  printf ' (%s)' "${ODIN_BOOTSTRAP_MODE_STATE_LAST_ERROR}"
+}
+
 odin_bootstrap_mode_state_init() {
   if ! odin_bootstrap_mode_state_available; then
     return 0
   fi
-  odin_mode_state_init >/dev/null 2>&1
+  odin_bootstrap_mode_state_call odin_mode_state_init
 }
 
 odin_bootstrap_mode_state_record_event() {
@@ -50,7 +79,7 @@ odin_bootstrap_mode_state_record_event() {
   if ! odin_bootstrap_mode_state_available; then
     return 0
   fi
-  odin_mode_state_record_event "${event}" >/dev/null 2>&1
+  odin_bootstrap_mode_state_call odin_mode_state_record_event "${event}"
 }
 
 odin_bootstrap_mode_state_set_mode_if_allowed() {
@@ -58,14 +87,14 @@ odin_bootstrap_mode_state_set_mode_if_allowed() {
   if ! odin_bootstrap_mode_state_available; then
     return 1
   fi
-  odin_mode_state_set_mode "${mode}" >/dev/null 2>&1
+  odin_bootstrap_mode_state_call odin_mode_state_set_mode "${mode}"
 }
 
 odin_bootstrap_mode_state_require_init() {
   if odin_bootstrap_mode_state_init; then
     return 0
   fi
-  odin_bootstrap_err "mode state initialization failed"
+  odin_bootstrap_err "mode state initialization failed$(odin_bootstrap_mode_state_reason_suffix)"
   return 70
 }
 
@@ -74,7 +103,7 @@ odin_bootstrap_mode_state_require_event() {
   if odin_bootstrap_mode_state_record_event "${event}"; then
     return 0
   fi
-  odin_bootstrap_err "mode state update failed for event '${event}'"
+  odin_bootstrap_err "mode state update failed for event '${event}'$(odin_bootstrap_mode_state_reason_suffix)"
   return 70
 }
 
@@ -90,7 +119,7 @@ odin_bootstrap_mode_state_require_mode() {
     return 2
   fi
 
-  odin_bootstrap_err "mode transition to ${mode} failed"
+  odin_bootstrap_err "mode transition to ${mode} failed$(odin_bootstrap_mode_state_reason_suffix)"
   return 70
 }
 
