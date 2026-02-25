@@ -10,6 +10,15 @@ from tui_core.models import PanelData
 AGENT_EXCLUDE = {"orchestrator", "self"}
 
 
+def _resolve_agent_state(status_data: dict, task: str) -> str:
+    state = status_data.get("status") or status_data.get("state")
+    if state:
+        return str(state)
+    if task and task != "-":
+        return "busy"
+    return "unknown"
+
+
 def collect(odin_dir: Path) -> PanelData:
     agents_dir = odin_dir / "agents"
     state = read_json(odin_dir / "state.json") or {}
@@ -27,11 +36,12 @@ def collect(odin_dir: Path) -> PanelData:
             if not child.is_dir() or child.name in AGENT_EXCLUDE:
                 continue
             status_data = read_json(child / "status.json") or {}
+            task = dispatch_by_agent.get(child.name, "-")
             item = {
                 "name": child.name,
                 "role": status_data.get("role", "agent"),
-                "state": status_data.get("state", "unknown"),
-                "task": dispatch_by_agent.get(child.name, "-"),
+                "state": _resolve_agent_state(status_data, task),
+                "task": task,
             }
             items.append(item)
 

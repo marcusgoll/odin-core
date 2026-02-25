@@ -13,6 +13,7 @@ from rich.columns import Columns
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from tui_core.collectors.inbox import collect as collect_inbox  # noqa: E402
+from tui_core.collectors.agents import collect as collect_agents  # noqa: E402
 from tui_core.collectors.kanban import collect as collect_kanban  # noqa: E402
 from tui_core.collectors.logs import collect as collect_logs  # noqa: E402
 from tui_core.formatting import compact_relative_age, task_label_for_type, wip_state  # noqa: E402
@@ -40,6 +41,27 @@ class FormattingTests(unittest.TestCase):
 
 
 class CollectorReadabilityTests(unittest.TestCase):
+    def test_agents_collect_prefers_status_field(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            odin_dir = Path(tmp)
+            agents_dir = odin_dir / "agents" / "sm"
+            agents_dir.mkdir(parents=True)
+            (agents_dir / "status.json").write_text(
+                json.dumps(
+                    {
+                        "name": "sm",
+                        "role": "sm",
+                        "status": "busy",
+                        "current_task": "cron-1",
+                    }
+                )
+            )
+            (odin_dir / "state.json").write_text(
+                json.dumps({"dispatched_tasks": {"cron-1": {"agent": "sm"}}})
+            )
+            data = collect_agents(odin_dir)
+            self.assertEqual(data.items[0]["state"], "busy")
+
     def test_inbox_collect_has_readable_task_label(self):
         with tempfile.TemporaryDirectory() as tmp:
             odin_dir = Path(tmp)
