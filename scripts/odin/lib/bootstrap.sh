@@ -5,6 +5,12 @@ ODIN_BOOTSTRAP_ROOT_DIR="$(cd "${ODIN_BOOTSTRAP_LIB_DIR}/../../.." && pwd)"
 ODIN_BOOTSTRAP_GUARDRAILS_DEFAULT="${ODIN_BOOTSTRAP_ROOT_DIR}/config/guardrails.yaml"
 ODIN_BOOTSTRAP_GUARDRAILS_OVERRIDE=""
 ODIN_BOOTSTRAP_GUARDRAILS_LAST_ERROR=""
+ODIN_BOOTSTRAP_MODE_STATE_LIB="${ODIN_BOOTSTRAP_LIB_DIR}/mode_state.sh"
+
+if [[ -f "${ODIN_BOOTSTRAP_MODE_STATE_LIB}" ]]; then
+  # shellcheck source=/dev/null
+  source "${ODIN_BOOTSTRAP_MODE_STATE_LIB}"
+fi
 
 odin_bootstrap_usage() {
   cat <<'EOF'
@@ -26,6 +32,31 @@ odin_bootstrap_err() {
 
 odin_bootstrap_info() {
   echo "[odin] $*"
+}
+
+odin_bootstrap_mode_state_available() {
+  declare -F odin_mode_state_init >/dev/null 2>&1
+}
+
+odin_bootstrap_mode_state_init() {
+  if odin_bootstrap_mode_state_available; then
+    odin_mode_state_init >/dev/null 2>&1 || true
+  fi
+}
+
+odin_bootstrap_mode_state_record_event() {
+  local event="$1"
+  if odin_bootstrap_mode_state_available; then
+    odin_mode_state_record_event "${event}" >/dev/null 2>&1 || true
+  fi
+}
+
+odin_bootstrap_mode_state_set_mode_if_allowed() {
+  local mode="$1"
+  if ! odin_bootstrap_mode_state_available; then
+    return 1
+  fi
+  odin_mode_state_set_mode "${mode}" >/dev/null 2>&1
 }
 
 odin_bootstrap_has_flag() {
@@ -433,6 +464,7 @@ odin_bootstrap_require_guardrails_or_dry_run() {
     return 2
   fi
 
+  odin_bootstrap_mode_state_record_event "guardrails.acknowledged.verified"
   return 0
 }
 
@@ -467,6 +499,7 @@ odin_bootstrap_cmd_connect() {
   fi
 
   odin_bootstrap_info "connect placeholder provider=${provider} auth=${auth_mode}"
+  odin_bootstrap_mode_state_record_event "provider.connected.verified"
 }
 
 odin_bootstrap_cmd_start() {
@@ -515,6 +548,7 @@ odin_bootstrap_cmd_tui() {
   fi
 
   odin_bootstrap_info "tui placeholder"
+  odin_bootstrap_mode_state_record_event "tui.opened.verified"
 }
 
 odin_bootstrap_cmd_inbox_add() {
@@ -542,6 +576,7 @@ odin_bootstrap_cmd_inbox_add() {
   fi
 
   odin_bootstrap_info "inbox add placeholder title=${title}"
+  odin_bootstrap_mode_state_record_event "inbox.first_item.verified"
 }
 
 odin_bootstrap_cmd_inbox_list() {
@@ -623,10 +658,23 @@ odin_bootstrap_cmd_verify() {
     return 0
   fi
 
-  if odin_bootstrap_guardrails_available; then
-    odin_bootstrap_info "verify placeholder guardrails=present"
+  if ! odin_bootstrap_guardrails_available; then
+    odin_bootstrap_mode_state_record_event "verify.failed"
+    odin_bootstrap_err "verify failed: guardrails file not found at $(odin_bootstrap_guardrails_path); mode set to RECOVERY."
+    return 2
+  fi
+
+  if ! odin_bootstrap_guardrails_acknowledged; then
+    odin_bootstrap_mode_state_record_event "verify.failed"
+    odin_bootstrap_err "verify failed: acknowledgement required; mode set to RECOVERY."
+    return 2
+  fi
+
+  odin_bootstrap_mode_state_record_event "verify.passed.verified"
+  if odin_bootstrap_mode_state_set_mode_if_allowed "OPERATE"; then
+    odin_bootstrap_info "verify placeholder guardrails=present mode=OPERATE"
   else
-    odin_bootstrap_info "verify placeholder guardrails=missing (conservative mode)"
+    odin_bootstrap_info "verify placeholder guardrails=present mode=BOOTSTRAP"
   fi
 }
 
@@ -665,6 +713,7 @@ odin_bootstrap_dispatch() {
     esac
   done
 
+  odin_bootstrap_mode_state_init
   local command="${1:-help}"
 
   case "${command}" in
