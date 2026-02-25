@@ -164,12 +164,25 @@ fn normalize_record(
     normalized.capabilities = record
         .capabilities
         .into_iter()
-        .map(|capability| DelegationCapability {
-            id: capability.id,
-            scope: capability.scope,
-        })
-        .collect();
+        .map(normalize_capability)
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(normalized)
+}
+
+fn normalize_capability(
+    capability: RawDelegationCapability,
+) -> Result<DelegationCapability, SkillRegistryLoadError> {
+    let id = capability.id.trim();
+    if id.is_empty() {
+        return Err(SkillRegistryLoadError::Parse(
+            "invalid capability id: empty".to_string(),
+        ));
+    }
+
+    Ok(DelegationCapability {
+        id: id.to_string(),
+        scope: capability.scope,
+    })
 }
 
 fn normalize_source(source: &str) -> String {

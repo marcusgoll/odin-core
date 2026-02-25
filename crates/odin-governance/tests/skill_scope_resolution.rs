@@ -298,6 +298,24 @@ skills:
     assert_eq!(parsed.skills[0].name, "brainstorming");
 }
 
+#[test]
+fn loader_rejects_whitespace_only_capability_id() {
+    let yaml = r#"
+schema_version: 1
+scope: user
+skills:
+  - name: brainstorming
+    trust_level: trusted
+    source: /skills/brainstorming
+    capabilities:
+      - id: "   "
+        scope: ["project"]
+"#;
+
+    let err = parse_scoped_registry(yaml, SkillScope::User).expect_err("must reject");
+    assert_parse_error_contains(err, "capability id");
+}
+
 fn assert_parse_error_contains(err: SkillRegistryLoadError, expected: &str) {
     match err {
         SkillRegistryLoadError::Parse(message) => {
