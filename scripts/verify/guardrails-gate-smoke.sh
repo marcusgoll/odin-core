@@ -6,6 +6,9 @@ cd "${ROOT_DIR}"
 TMP_DIR="$(mktemp -d /tmp/odin-guardrails-gate.XXXXXX)"
 MISSING_GUARDRAILS_PATH="${TMP_DIR}/missing-guardrails.yaml"
 GUARDRAILS_PATH="${TMP_DIR}/guardrails.yaml"
+UNREADABLE_GUARDRAILS_PATH="${TMP_DIR}/guardrails-unreadable.yaml"
+QUOTED_DENY_GUARDRAILS_PATH="${TMP_DIR}/guardrails-quoted-deny.yaml"
+FLOW_DENY_GUARDRAILS_PATH="${TMP_DIR}/guardrails-flow-deny.yaml"
 
 cleanup() {
   rm -rf "${TMP_DIR}"
@@ -15,6 +18,27 @@ trap cleanup EXIT
 cat >"${GUARDRAILS_PATH}" <<'EOF'
 denylist:
   - gateway.add
+confirm_required:
+  - integration
+EOF
+
+cat >"${UNREADABLE_GUARDRAILS_PATH}" <<'EOF'
+denylist:
+  - gateway.add
+confirm_required:
+  - integration
+EOF
+chmod 000 "${UNREADABLE_GUARDRAILS_PATH}"
+
+cat >"${QUOTED_DENY_GUARDRAILS_PATH}" <<'EOF'
+denylist:
+  - "gateway.add"
+confirm_required:
+  - integration
+EOF
+
+cat >"${FLOW_DENY_GUARDRAILS_PATH}" <<'EOF'
+denylist: [gateway.add, connect]
 confirm_required:
   - integration
 EOF
@@ -42,7 +66,7 @@ expect_failure() {
     exit 1
   fi
 
-  if [[ -n "${expected_err}" ]] && ! grep -q "${expected_err}" "${err_file}"; then
+  if [[ -n "${expected_err}" ]] && ! grep -Fq "${expected_err}" "${err_file}"; then
     echo "[guardrails-gate] ERROR expected stderr pattern '${expected_err}' for ${label}" >&2
     cat "${out_file}" >&2
     cat "${err_file}" >&2
@@ -74,7 +98,7 @@ expect_success() {
     exit 1
   fi
 
-  if [[ -n "${expected_out}" ]] && ! grep -q "${expected_out}" "${out_file}"; then
+  if [[ -n "${expected_out}" ]] && ! grep -Fq "${expected_out}" "${out_file}"; then
     echo "[guardrails-gate] ERROR expected stdout pattern '${expected_out}' for ${label}" >&2
     cat "${out_file}" >&2
     cat "${err_file}" >&2
@@ -117,5 +141,23 @@ expect_failure \
   2 \
   "denylisted by guardrails" \
   env ODIN_GUARDRAILS_ACK=yes scripts/odin/odin --guardrails "${GUARDRAILS_PATH}" gateway add cli --confirm
+
+expect_failure \
+  "unreadable guardrails file blocks risky action" \
+  2 \
+  "guardrails policy unreadable or unsupported" \
+  env ODIN_GUARDRAILS_ACK=yes scripts/odin/odin --guardrails "${UNREADABLE_GUARDRAILS_PATH}" start
+
+expect_failure \
+  "quoted denylist item blocks action" \
+  2 \
+  "denylisted by guardrails" \
+  env ODIN_GUARDRAILS_ACK=yes scripts/odin/odin --guardrails "${QUOTED_DENY_GUARDRAILS_PATH}" gateway add cli --confirm
+
+expect_failure \
+  "flow-style denylist item blocks action" \
+  2 \
+  "denylisted by guardrails" \
+  env ODIN_GUARDRAILS_ACK=yes scripts/odin/odin --guardrails "${FLOW_DENY_GUARDRAILS_PATH}" connect claude oauth --confirm
 
 echo "[guardrails-gate] COMPLETE"

@@ -4,6 +4,7 @@ ODIN_BOOTSTRAP_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ODIN_BOOTSTRAP_ROOT_DIR="$(cd "${ODIN_BOOTSTRAP_LIB_DIR}/../../.." && pwd)"
 ODIN_BOOTSTRAP_GUARDRAILS_DEFAULT="${ODIN_BOOTSTRAP_ROOT_DIR}/config/guardrails.yaml"
 ODIN_BOOTSTRAP_GUARDRAILS_OVERRIDE=""
+ODIN_BOOTSTRAP_GUARDRAILS_LAST_ERROR=""
 
 odin_bootstrap_usage() {
   cat <<'EOF'
@@ -143,19 +144,89 @@ odin_bootstrap_guardrails_list_contains() {
   local needle="$2"
   local path
   path="$(odin_bootstrap_guardrails_path)"
+  ODIN_BOOTSTRAP_GUARDRAILS_LAST_ERROR=""
 
   if [[ ! -f "${path}" ]]; then
     return 1
   fi
 
-  awk -v key="${key}" '
+  if [[ ! -r "${path}" ]]; then
+    ODIN_BOOTSTRAP_GUARDRAILS_LAST_ERROR="file is not readable"
+    return 2
+  fi
+
+  local rc
+  if awk -v key="${key}" -v needle="${needle}" '
+    function ltrim(s) {
+      sub(/^[[:space:]]+/, "", s)
+      return s
+    }
+    function rtrim(s) {
+      sub(/[[:space:]]+$/, "", s)
+      return s
+    }
+    function trim(s) {
+      return rtrim(ltrim(s))
+    }
+    function normalize_item(raw, single, item, first, last) {
+      single = sprintf("%c", 39)
+      item = trim(raw)
+      if (item == "") {
+        parse_error = 1
+        return ""
+      }
+      first = substr(item, 1, 1)
+      last = substr(item, length(item), 1)
+      if ((first == "\"" && last == "\"") || (first == single && last == single)) {
+        item = substr(item, 2, length(item) - 2)
+      } else if (first == "\"" || first == single || last == "\"" || last == single) {
+        parse_error = 1
+        return ""
+      }
+      item = trim(item)
+      if (item == "") {
+        parse_error = 1
+        return ""
+      }
+      if (item ~ /^[\[\{]/ || item ~ /[\]\}]$/) {
+        parse_error = 1
+        return ""
+      }
+      return item
+    }
+    function parse_flow_list(rest, inner, count, i, token) {
+      if (rest !~ /^\[.*\]$/) {
+        parse_error = 1
+        return
+      }
+      inner = rest
+      sub(/^\[/, "", inner)
+      sub(/\]$/, "", inner)
+      inner = trim(inner)
+      if (inner == "") {
+        return
+      }
+      count = split(inner, flow_parts, /,/)
+      for (i = 1; i <= count; i++) {
+        token = normalize_item(flow_parts[i])
+        if (parse_error) {
+          return
+        }
+        if (token == needle) {
+          found = 1
+        }
+      }
+    }
     BEGIN {
+      parse_error = 0
+      found = 0
       in_section = 0
       section_indent = -1
     }
     {
-      line = $0
-      sub(/\r$/, "", line)
+      raw = $0
+      sub(/\r$/, "", raw)
+      line = raw
       sub(/[[:space:]]+#.*/, "", line)
       if (line ~ /^[[:space:]]*$/) {
         next
@@ -166,25 +237,71 @@ odin_bootstrap_guardrails_list_contains() {
         indent = 0
       }
 
-      key_pattern = "^[[:space:]]*" key ":[[:space:]]*$"
-      if (!in_section && line ~ key_pattern) {
-        in_section = 1
-        section_indent = indent
+      if (in_section) {
+        if (line ~ /^[[:space:]]*-[[:space:]]*.+$/) {
+          item = line
+          sub(/^[[:space:]]*-[[:space:]]*/, "", item)
+          item = normalize_item(item)
+          if (parse_error) {
+            next
+          }
+          if (item == needle) {
+            found = 1
+          }
+          next
+        }
+
+        if (indent <= section_indent && line ~ /^[[:space:]]*[A-Za-z0-9_.-]+:[[:space:]]*.*$/) {
+          in_section = 0
+        } else {
+          parse_error = 1
+          next
+        }
+      }
+
+      key_prefix = "^[[:space:]]*" key ":[[:space:]]*"
+      if (line ~ key_prefix) {
+        rest = line
+        sub(key_prefix, "", rest)
+        rest = trim(rest)
+        if (rest == "") {
+          in_section = 1
+          section_indent = indent
+          next
+        }
+        parse_flow_list(rest)
         next
       }
-
-      if (in_section && indent <= section_indent && line ~ /^[[:space:]]*[A-Za-z0-9_.-]+:[[:space:]]*.*$/) {
-        in_section = 0
-      }
-
-      if (in_section && line ~ /^[[:space:]]*-[[:space:]]*.+$/) {
-        item = line
-        sub(/^[[:space:]]*-[[:space:]]*/, "", item)
-        gsub(/[[:space:]]+$/, "", item)
-        print item
-      }
     }
-  ' "${path}" | grep -Fxq "${needle}"
+    END {
+      if (parse_error) {
+        exit 2
+      }
+      if (found) {
+        exit 0
+      }
+      exit 1
+    }
+  ' "${path}"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  case "${rc}" in
+    0|1)
+      return "${rc}"
+      ;;
+    *)
+      ODIN_BOOTSTRAP_GUARDRAILS_LAST_ERROR="unsupported '${key}' policy syntax"
+      return 2
+      ;;
+  esac
+}
+
+odin_bootstrap_guardrails_policy_error() {
+  local action_label="$1"
+  local reason="${ODIN_BOOTSTRAP_GUARDRAILS_LAST_ERROR:-policy could not be parsed}"
+  odin_bootstrap_err "BLOCKED ${action_label}: guardrails policy unreadable or unsupported at $(odin_bootstrap_guardrails_path) (${reason})"
 }
 
 odin_bootstrap_action_requires_confirm() {
@@ -192,13 +309,34 @@ odin_bootstrap_action_requires_confirm() {
   local category
   category="$(odin_bootstrap_action_category "${action_id}")"
 
+  local rc
   if odin_bootstrap_guardrails_list_contains "confirm_required" "${action_id}"; then
-    return 0
+    rc=0
+  else
+    rc=$?
   fi
+  case "${rc}" in
+    0)
+      return 0
+      ;;
+    2)
+      return 2
+      ;;
+  esac
 
   if odin_bootstrap_guardrails_list_contains "confirm_required" "${category}"; then
-    return 0
+    rc=0
+  else
+    rc=$?
   fi
+  case "${rc}" in
+    0)
+      return 0
+      ;;
+    2)
+      return 2
+      ;;
+  esac
 
   return 1
 }
@@ -218,19 +356,39 @@ odin_bootstrap_require_guardrails_or_dry_run() {
     return 2
   fi
 
+  local deny_rc
   if odin_bootstrap_guardrails_list_contains "denylist" "${action_id}"; then
+    deny_rc=0
+  else
+    deny_rc=$?
+  fi
+  if [[ "${deny_rc}" -eq 0 ]]; then
     odin_bootstrap_err "BLOCKED ${action_label}: denylisted by guardrails at $(odin_bootstrap_guardrails_path)"
+    return 2
+  fi
+  if [[ "${deny_rc}" -eq 2 ]]; then
+    odin_bootstrap_guardrails_policy_error "${action_label}"
     return 2
   fi
 
   local category
   category="$(odin_bootstrap_action_category "${action_id}")"
   if [[ "${category}" != "readonly" ]] && ! odin_bootstrap_guardrails_acknowledged; then
-    odin_bootstrap_err "BLOCKED ${action_label}: acknowledgement required. Set ODIN_GUARDRAILS_ACK=yes to execute mutating actions."
+    odin_bootstrap_err "BLOCKED ${action_label}: acknowledgement required. Set ODIN_GUARDRAILS_ACK=yes to execute integration or mutating actions."
     return 2
   fi
 
-  if odin_bootstrap_action_requires_confirm "${action_id}" && ! odin_bootstrap_has_confirm "${args[@]}"; then
+  local confirm_rc
+  if odin_bootstrap_action_requires_confirm "${action_id}"; then
+    confirm_rc=0
+  else
+    confirm_rc=$?
+  fi
+  if [[ "${confirm_rc}" -eq 2 ]]; then
+    odin_bootstrap_guardrails_policy_error "${action_label}"
+    return 2
+  fi
+  if [[ "${confirm_rc}" -eq 0 ]] && ! odin_bootstrap_has_confirm "${args[@]}"; then
     odin_bootstrap_err "BLOCKED ${action_label}: category '${category}' requires --confirm."
     return 2
   fi
