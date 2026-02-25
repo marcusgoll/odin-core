@@ -264,6 +264,40 @@ skills:
     assert_parse_error_contains(err, "scope");
 }
 
+#[test]
+fn loader_rejects_unknown_capability_field() {
+    let yaml = r#"
+schema_version: 1
+scope: user
+skills:
+  - name: brainstorming
+    trust_level: trusted
+    source: /skills/brainstorming
+    capabilities:
+      - id: repo.read
+        scope: ["project"]
+        extra: true
+"#;
+
+    let err = parse_scoped_registry(yaml, SkillScope::User).expect_err("must reject");
+    assert_parse_error_contains(err, "extra");
+}
+
+#[test]
+fn loader_trims_skill_name_whitespace() {
+    let yaml = r#"
+schema_version: 1
+scope: user
+skills:
+  - name: "brainstorming   "
+    trust_level: trusted
+    source: /skills/brainstorming
+"#;
+
+    let parsed = parse_scoped_registry(yaml, SkillScope::User).expect("parse");
+    assert_eq!(parsed.skills[0].name, "brainstorming");
+}
+
 fn assert_parse_error_contains(err: SkillRegistryLoadError, expected: &str) {
     match err {
         SkillRegistryLoadError::Parse(message) => {

@@ -33,7 +33,15 @@ struct RawSkillRecord {
     #[serde(default)]
     pinned_version: Option<String>,
     #[serde(default)]
-    capabilities: Vec<DelegationCapability>,
+    capabilities: Vec<RawDelegationCapability>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawDelegationCapability {
+    id: String,
+    #[serde(default)]
+    scope: Vec<String>,
 }
 
 pub fn resolve_skill(
@@ -137,7 +145,8 @@ fn normalize_record(
     record: RawSkillRecord,
     _scope: SkillScope,
 ) -> Result<SkillRecord, SkillRegistryLoadError> {
-    if record.name.trim().is_empty() {
+    let normalized_name = record.name.trim();
+    if normalized_name.is_empty() {
         return Err(SkillRegistryLoadError::Parse(
             "invalid name: empty".to_string(),
         ));
@@ -148,11 +157,18 @@ fn normalize_record(
         ));
     }
 
-    let mut normalized = SkillRecord::default_for(record.name.clone());
+    let mut normalized = SkillRecord::default_for(normalized_name.to_string());
     normalized.trust_level = parse_trust_level(&record.trust_level)?;
     normalized.source = normalize_source(&record.source);
     normalized.pinned_version = record.pinned_version;
-    normalized.capabilities = record.capabilities;
+    normalized.capabilities = record
+        .capabilities
+        .into_iter()
+        .map(|capability| DelegationCapability {
+            id: capability.id,
+            scope: capability.scope,
+        })
+        .collect();
     Ok(normalized)
 }
 
