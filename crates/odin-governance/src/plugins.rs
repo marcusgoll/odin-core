@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::ffi::OsString;
+use std::path::{Component, Path, PathBuf};
 
 use odin_plugin_protocol::{DelegationCapability, PluginPermissionEnvelope, TrustLevel};
 
@@ -151,6 +152,10 @@ impl StagehandPolicy {
             return deny("mode_not_supported");
         }
 
+        if has_unsafe_shell_syntax(command) {
+            return deny("command_unsafe_shell_syntax");
+        }
+
         let Some((command_name, args)) = parse_command(command) else {
             return deny("command_not_allowlisted");
         };
@@ -167,11 +172,14 @@ impl StagehandPolicy {
     }
 
     fn is_workspace_allowlisted(&self, workspace: &str) -> bool {
-        let candidate = Path::new(workspace);
-        self.allowed_workspaces.iter().any(|allowed| {
-            let allowed = Path::new(allowed);
-            candidate == allowed || candidate.starts_with(allowed)
-        })
+        let Some(candidate) = normalize_lexical_path(Path::new(workspace)) else {
+            return false;
+        };
+
+        self.allowed_workspaces
+            .iter()
+            .filter_map(|allowed| normalize_lexical_path(Path::new(allowed)))
+            .any(|allowed| candidate == allowed || candidate.starts_with(&allowed))
     }
 }
 
@@ -337,6 +345,11 @@ fn normalize_workspace(workspace: &str) -> Option<String> {
         return None;
     }
 
+    let path = Path::new(trimmed);
+    if path.is_absolute() {
+        return normalize_lexical_path(path).map(pathbuf_to_string);
+    }
+
     Some(trimmed.to_string())
 }
 
@@ -363,10 +376,14 @@ fn first_absolute_path_outside_workspaces(
 ) -> Option<String> {
     for arg in args {
         if let Some(path) = extract_absolute_path(arg) {
-            let path_obj = Path::new(&path);
+            let Some(path_obj) = normalize_lexical_path(Path::new(&path)) else {
+                return Some(path);
+            };
+
             let in_allowed_workspace = allowed_workspaces
                 .iter()
-                .any(|workspace| path_obj.starts_with(Path::new(workspace)));
+                .filter_map(|workspace| normalize_lexical_path(Path::new(workspace)))
+                .any(|workspace| path_obj == workspace || path_obj.starts_with(&workspace));
             if !in_allowed_workspace {
                 return Some(path);
             }
@@ -404,10 +421,75 @@ fn strip_wrapping_quotes(value: &str) -> String {
 }
 
 fn domain_matches(host: &str, allowed: &DomainRule) -> bool {
-    if host == allowed.host {
-        return true;
+    if allowed.allow_subdomains {
+        return host.ends_with(&format!(".{}", allowed.host));
     }
-    allowed.allow_subdomains && host.ends_with(&format!(".{}", allowed.host))
+    host == allowed.host
+}
+
+fn has_unsafe_shell_syntax(command: &str) -> bool {
+    command
+        .chars()
+        .any(|ch| matches!(ch, ';' | '|' | '&' | '>' | '<' | '`' | '$' | '(' | ')'))
+}
+
+fn normalize_lexical_path(path: &Path) -> Option<PathBuf> {
+    let mut prefix: Option<OsString> = None;
+    let mut has_root = false;
+    let mut parts: Vec<OsString> = Vec::new();
+
+    for component in path.components() {
+        match component {
+            Component::Prefix(value) => {
+                prefix = Some(value.as_os_str().to_os_string());
+            }
+            Component::RootDir => {
+                has_root = true;
+            }
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if let Some(last) = parts.last() {
+                    if last != ".." {
+                        parts.pop();
+                    } else if has_root {
+                        return None;
+                    } else {
+                        parts.push(OsString::from(".."));
+                    }
+                } else if has_root {
+                    return None;
+                } else {
+                    parts.push(OsString::from(".."));
+                }
+            }
+            Component::Normal(value) => parts.push(value.to_os_string()),
+        }
+    }
+
+    let mut normalized = PathBuf::new();
+    if let Some(value) = prefix {
+        normalized.push(value);
+    }
+    if has_root {
+        normalized.push(std::path::MAIN_SEPARATOR.to_string());
+    }
+    for part in parts {
+        normalized.push(part);
+    }
+
+    if normalized.as_os_str().is_empty() {
+        if has_root {
+            normalized.push(std::path::MAIN_SEPARATOR.to_string());
+        } else {
+            normalized.push(".");
+        }
+    }
+
+    Some(normalized)
+}
+
+fn pathbuf_to_string(path: PathBuf) -> String {
+    path.to_string_lossy().into_owned()
 }
 
 #[cfg(test)]
