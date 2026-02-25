@@ -21,7 +21,8 @@ def _resolve_agent_state(status_data: dict, task: str) -> str:
 
 
 def _dispatch_sort_key(task_id: str, info: dict | None) -> tuple[int, float, str]:
-    created_at = parse_iso_timestamp((info or {}).get("created_at"))
+    raw_created_at = (info or {}).get("created_at")
+    created_at = parse_iso_timestamp(raw_created_at) if isinstance(raw_created_at, str) else None
     if created_at is None:
         return (0, float("-inf"), task_id)
     return (1, created_at.timestamp(), task_id)
