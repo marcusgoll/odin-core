@@ -1,4 +1,4 @@
-FROM rust:1.77-bookworm as build
+FROM rust:1-bookworm as build
 WORKDIR /app
 COPY . .
 RUN cargo build -p odin-cli --release
