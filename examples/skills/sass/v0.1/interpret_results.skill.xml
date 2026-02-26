@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<skill skill_id="interpret_results" version="0.1">
+  <permissions>
+    <permission>read_repo</permission>
+  </permissions>
+  <wake_up state="load_artifacts" />
+  <states initial_state="load_artifacts">
+    <state id="load_artifacts">
+      <transition event="artifacts_ready" target="classify_outcome" />
+    </state>
+    <state id="classify_outcome">
+      <transition event="all_green" target="summarize_success" />
+      <transition event="has_failures" target="summarize_failures">
+        <guard expression="failed_tests &gt; 0" />
+      </transition>
+    </state>
+    <state id="summarize_success">
+      <transition event="summary_written" target="done" />
+    </state>
+    <state id="summarize_failures">
+      <transition event="summary_written" target="done" />
+    </state>
+    <state id="done" end="true" />
+  </states>
+</skill>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<skill skill_id="resolve_project" version="0.1">
+  <permissions>
+    <permission>read_repo</permission>
+  </permissions>
+  <wake_up state="scan_workspace" />
+  <states initial_state="scan_workspace">
+    <state id="scan_workspace">
+      <transition event="workspace_detected" target="resolve_targets" />
+    </state>
+    <state id="resolve_targets">
+      <transition event="target_found" target="done" />
+      <transition event="target_missing" target="fallback_lookup">
+        <guard expression="allow_fallback == true" />
+      </transition>
+    </state>
+    <state id="fallback_lookup">
+      <transition event="fallback_resolved" target="done" />
+      <transition event="fallback_failed" target="done" />
+    </state>
+    <state id="done" end="true" />
+  </states>
+</skill>
