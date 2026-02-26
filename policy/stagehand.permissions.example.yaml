@@ -2,6 +2,8 @@ schema_version: 1
 plugin: stagehand
 trust_level: caution
 permissions:
+  - id: stagehand.enabled
+    scope: []
   - id: browser.observe
     scope:
       - example.com

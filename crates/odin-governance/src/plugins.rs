@@ -247,6 +247,10 @@ where
 }
 
 pub fn stagehand_policy_from_envelope(envelope: &PluginPermissionEnvelope) -> StagehandPolicy {
+    if envelope.plugin != "stagehand" {
+        return stagehand_default_policy();
+    }
+
     let can_enable = envelope.trust_level != TrustLevel::Untrusted;
     let mut policy = stagehand_default_policy();
 
@@ -406,56 +410,23 @@ fn first_absolute_path_outside_workspaces(
     args: &[String],
     allowed_workspaces: &BTreeSet<String>,
 ) -> Option<String> {
-    for arg in args {
-        if let Some(path) = extract_absolute_path(arg) {
-            let Some(path_obj) = canonicalize_existing_absolute_path(Path::new(&path)) else {
-                return Some(path);
-            };
+    for path in command_scoped_path_values(args)
+        .into_iter()
+        .filter(|value| Path::new(value).is_absolute())
+    {
+        let Some(path_obj) = canonicalize_existing_absolute_path(Path::new(&path)) else {
+            return Some(path);
+        };
 
-            let in_allowed_workspace = allowed_workspaces
-                .iter()
-                .filter_map(|workspace| normalize_boundary_path(Path::new(workspace)))
-                .any(|workspace| path_obj == workspace || path_obj.starts_with(&workspace));
-            if !in_allowed_workspace {
-                return Some(path);
-            }
+        let in_allowed_workspace = allowed_workspaces
+            .iter()
+            .filter_map(|workspace| normalize_boundary_path(Path::new(workspace)))
+            .any(|workspace| path_obj == workspace || path_obj.starts_with(&workspace));
+        if !in_allowed_workspace {
+            return Some(path);
         }
     }
     None
-}
-
-fn extract_absolute_path(token: &str) -> Option<String> {
-    let stripped = strip_wrapping_quotes(token);
-    if Path::new(&stripped).is_absolute() {
-        return Some(stripped);
-    }
-
-    if let Some((_, value)) = stripped.split_once('=') {
-        let value = strip_wrapping_quotes(value);
-        if Path::new(&value).is_absolute() {
-            return Some(value);
-        }
-    }
-
-    extract_attached_short_option_absolute_path(&stripped)
-}
-
-fn extract_attached_short_option_absolute_path(token: &str) -> Option<String> {
-    if !token.starts_with('-') || token.starts_with("--") {
-        return None;
-    }
-
-    let slash_index = token.find('/')?;
-    if slash_index < 2 {
-        return None;
-    }
-
-    let candidate = &token[slash_index..];
-    if Path::new(candidate).is_absolute() {
-        Some(candidate.to_string())
-    } else {
-        None
-    }
 }
 
 fn strip_wrapping_quotes(value: &str) -> String {
@@ -488,17 +459,9 @@ fn has_unsafe_shell_syntax(command: &str) -> bool {
 }
 
 fn has_relative_parent_traversal(args: &[String]) -> bool {
-    args.iter().any(|arg| {
-        let token = strip_wrapping_quotes(arg);
-        has_relative_parent_segment(&token)
-            || token
-                .split_once('=')
-                .map(|(_, value)| {
-                    let value = strip_wrapping_quotes(value);
-                    has_relative_parent_segment(value.trim())
-                })
-                .unwrap_or(false)
-    })
+    command_scoped_path_values(args)
+        .into_iter()
+        .any(|value| has_relative_parent_segment(&value))
 }
 
 fn has_relative_parent_segment(token: &str) -> bool {
@@ -510,31 +473,9 @@ fn has_relative_parent_segment(token: &str) -> bool {
 }
 
 fn has_unscoped_relative_path(args: &[String]) -> bool {
-    args.iter().any(|arg| {
-        let candidate = if let Some((_, value)) = arg.split_once('=') {
-            let value = strip_wrapping_quotes(value);
-            let value = value.trim().to_string();
-            if value.is_empty() || !looks_path_like_option_value(&value) {
-                return false;
-            }
-            value
-        } else {
-            if arg.starts_with('-') {
-                return false;
-            }
-            strip_wrapping_quotes(arg).trim().to_string()
-        };
-
-        if candidate.is_empty() {
-            return false;
-        }
-
-        if !looks_path_like_option_value(&candidate) {
-            return false;
-        }
-
-        !Path::new(&candidate).is_absolute()
-    })
+    command_scoped_path_values(args)
+        .into_iter()
+        .any(|value| !Path::new(&value).is_absolute())
 }
 
 fn normalize_boundary_path(path: &Path) -> Option<PathBuf> {
@@ -555,8 +496,58 @@ fn canonicalize_existing_absolute_path(path: &Path) -> Option<PathBuf> {
     fs::canonicalize(path).ok()
 }
 
-fn looks_path_like_option_value(value: &str) -> bool {
-    value.contains('/') || value.contains('\\') || value.starts_with('.') || Path::new(value).is_absolute()
+fn command_scoped_path_values(args: &[String]) -> Vec<String> {
+    let mut values = Vec::new();
+
+    for arg in args {
+        let token = strip_wrapping_quotes(arg);
+        let trimmed = token.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if let Some(value) = extract_option_value(trimmed) {
+            values.push(value);
+            continue;
+        }
+
+        if trimmed.starts_with('-') {
+            continue;
+        }
+
+        values.push(trimmed.to_string());
+    }
+
+    values
+}
+
+fn extract_option_value(token: &str) -> Option<String> {
+    if token.starts_with("--") {
+        let (_, value) = token.split_once('=')?;
+        return normalize_option_value(value);
+    }
+
+    if token.starts_with('-') {
+        if token.len() <= 2 {
+            return None;
+        }
+
+        let attached = &token[2..];
+        let attached = attached.strip_prefix('=').unwrap_or(attached);
+        return normalize_option_value(attached);
+    }
+
+    None
+}
+
+fn normalize_option_value(value: &str) -> Option<String> {
+    let trimmed = strip_wrapping_quotes(value);
+    let trimmed = trimmed.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 fn normalize_lexical_path(path: &Path) -> Option<PathBuf> {

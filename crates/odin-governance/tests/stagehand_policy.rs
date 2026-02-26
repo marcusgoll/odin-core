@@ -205,6 +205,23 @@ fn stagehand_denies_unscoped_relative_command_arg_when_workspace_boundaries_acti
 }
 
 #[test]
+fn stagehand_denies_filename_like_positional_arg_when_workspace_boundaries_active() {
+    let policy = stagehand_default_policy()
+        .with_enabled(true)
+        .with_commands(["cat"])
+        .with_workspaces(["/home/orchestrator/odin-core"]);
+
+    let decision = policy.evaluate(Action::RunCommand("cat secret.txt".to_string()));
+
+    assert_eq!(
+        decision,
+        PermissionDecision::Deny {
+            reason_code: "command_relative_path_unscoped".to_string()
+        }
+    );
+}
+
+#[test]
 fn stagehand_denies_relative_path_in_option_value_when_workspace_boundaries_active() {
     let policy = stagehand_default_policy()
         .with_enabled(true)
@@ -214,6 +231,23 @@ fn stagehand_denies_relative_path_in_option_value_when_workspace_boundaries_acti
     let decision = policy.evaluate(Action::RunCommand(
         "cat --input=relative/path/file.txt".to_string(),
     ));
+
+    assert_eq!(
+        decision,
+        PermissionDecision::Deny {
+            reason_code: "command_relative_path_unscoped".to_string()
+        }
+    );
+}
+
+#[test]
+fn stagehand_denies_attached_short_option_relative_value_when_workspace_boundaries_active() {
+    let policy = stagehand_default_policy()
+        .with_enabled(true)
+        .with_commands(["cat"])
+        .with_workspaces(["/home/orchestrator/odin-core"]);
+
+    let decision = policy.evaluate(Action::RunCommand("cat -fsecret.txt".to_string()));
 
     assert_eq!(
         decision,
@@ -313,7 +347,7 @@ fn stagehand_allows_absolute_option_path_within_workspace() {
 }
 
 #[test]
-fn stagehand_allows_scalar_option_value_when_workspace_boundaries_active() {
+fn stagehand_denies_scalar_option_value_when_workspace_boundaries_active() {
     let policy = stagehand_default_policy()
         .with_enabled(true)
         .with_commands(["cat"])
@@ -323,8 +357,8 @@ fn stagehand_allows_scalar_option_value_when_workspace_boundaries_active() {
 
     assert_eq!(
         decision,
-        PermissionDecision::Allow {
-            reason_code: "command_allowlisted".to_string()
+        PermissionDecision::Deny {
+            reason_code: "command_relative_path_unscoped".to_string()
         }
     );
 }
@@ -367,7 +401,7 @@ fn stagehand_denies_quoted_parent_traversal_option_value_without_workspace_polic
 }
 
 #[test]
-fn stagehand_allows_positional_scalar_with_in_workspace_absolute_path() {
+fn stagehand_allows_absolute_positional_path_within_workspace() {
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("clock")
@@ -382,10 +416,7 @@ fn stagehand_allows_positional_scalar_with_in_workspace_absolute_path() {
         .with_commands(["cat"])
         .with_workspaces([workspace.to_string_lossy().to_string()]);
 
-    let decision = policy.evaluate(Action::RunCommand(format!(
-        "cat always {}",
-        file.to_string_lossy()
-    )));
+    let decision = policy.evaluate(Action::RunCommand(format!("cat {}", file.to_string_lossy())));
 
     assert_eq!(
         decision,
@@ -456,6 +487,34 @@ fn stagehand_trusted_envelope_requires_explicit_enable_capability() {
             id: "browser.observe".to_string(),
             scope: vec!["example.com".to_string()],
         }],
+    };
+
+    let policy = stagehand_policy_from_envelope(&envelope);
+    let decision = policy.evaluate(Action::ObserveUrl("https://example.com".to_string()));
+
+    assert_eq!(
+        decision,
+        PermissionDecision::Deny {
+            reason_code: "plugin_disabled".to_string()
+        }
+    );
+}
+
+#[test]
+fn non_stagehand_envelope_cannot_enable_stagehand_policy() {
+    let envelope = PluginPermissionEnvelope {
+        plugin: "not-stagehand".to_string(),
+        trust_level: TrustLevel::Trusted,
+        permissions: vec![
+            DelegationCapability {
+                id: "stagehand.enabled".to_string(),
+                scope: vec![],
+            },
+            DelegationCapability {
+                id: "browser.observe".to_string(),
+                scope: vec!["example.com".to_string()],
+            },
+        ],
     };
 
     let policy = stagehand_policy_from_envelope(&envelope);
