@@ -30,6 +30,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Workflow contract lint
+        run: bash scripts/verify/workflow-contract.sh
+      - name: SASS skills contract lint
+        run: bash scripts/verify/skills-contract.sh
       - name: Plugin schema JSON validity
         run: jq empty schemas/plugin-manifest.v1.schema.json
       - name: Example manifest exists
