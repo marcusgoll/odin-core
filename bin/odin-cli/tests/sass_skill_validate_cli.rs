@@ -128,3 +128,43 @@ fn skill_validate_fails_when_decision_transitions_missing_guards() {
         invalid.stderr
     );
 }
+
+#[test]
+fn skill_validate_fails_when_no_end_state_exists() {
+    let invalid_path = fixture_path("broken-missing-end-state.skill.xml");
+    let invalid_path_str = invalid_path.to_str().expect("invalid path must be utf-8");
+
+    let invalid = run_cli(&["skill", "validate", invalid_path_str]);
+    assert!(
+        !invalid.status.success(),
+        "expected failure for missing end state\nstdout:\n{}\nstderr:\n{}",
+        invalid.stdout,
+        invalid.stderr
+    );
+    assert!(
+        invalid
+            .stderr
+            .contains("at least one end state is required"),
+        "expected stderr to mention missing end-state rule\nstderr:\n{}",
+        invalid.stderr
+    );
+}
+
+#[test]
+fn skill_validate_fails_when_transition_target_does_not_exist() {
+    let invalid_path = fixture_path("broken-missing-target.skill.xml");
+    let invalid_path_str = invalid_path.to_str().expect("invalid path must be utf-8");
+
+    let invalid = run_cli(&["skill", "validate", invalid_path_str]);
+    assert!(
+        !invalid.status.success(),
+        "expected failure for unknown transition target\nstdout:\n{}\nstderr:\n{}",
+        invalid.stdout,
+        invalid.stderr
+    );
+    assert!(
+        invalid.stderr.contains("transitions to unknown target"),
+        "expected stderr to mention unknown transition target\nstderr:\n{}",
+        invalid.stderr
+    );
+}
