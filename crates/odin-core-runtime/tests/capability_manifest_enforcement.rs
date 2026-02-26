@@ -51,6 +51,23 @@ fn request_for(plugin: &str, capability: &str) -> ActionRequest {
     }
 }
 
+fn request_for_with_scope(plugin: &str, capability: &str, scope: &[&str]) -> ActionRequest {
+    ActionRequest {
+        request_id: format!("req-{capability}"),
+        risk_tier: RiskTier::Safe,
+        capability: CapabilityRequest {
+            plugin: plugin.to_string(),
+            project: "demo".to_string(),
+            capability: capability.to_string(),
+            scope: scope.iter().map(|value| value.to_string()).collect(),
+            reason: "unit test".to_string(),
+        },
+        input: serde_json::json!({
+            "url": "https://example.com"
+        }),
+    }
+}
+
 fn manifest_allowing(plugin: &str, capability: &str) -> CapabilityManifest {
     CapabilityManifest {
         schema_version: 1,
@@ -99,6 +116,80 @@ fn denies_stagehand_for_non_browser_agent() {
         .expect("outcome");
 
     assert_eq!(outcome.status, ActionStatus::Blocked);
+    assert_eq!(outcome.detail, "plugin_permission_denied");
+    assert!(audit
+        .events()
+        .iter()
+        .any(|event| event == "governance.manifest.denied"));
+}
+
+#[test]
+fn denies_unknown_stagehand_capability_fail_closed() {
+    let mut policy = StaticPolicyEngine::default();
+    policy.allow_capability("stagehand", "demo", "stagehand.superpower");
+
+    let audit = MemoryAuditSink::default();
+    let runtime = OrchestratorRuntime::new(policy, audit.clone(), DryRunExecutor);
+    let outcome = runtime
+        .handle_action_with_manifest(
+            request_for("stagehand", "stagehand.superpower"),
+            &manifest_allowing("stagehand", "stagehand.superpower"),
+        )
+        .expect("outcome");
+
+    assert_eq!(outcome.status, ActionStatus::Blocked);
+    assert_eq!(outcome.detail, "manifest_stagehand_capability_unknown");
+    assert!(audit
+        .events()
+        .iter()
+        .any(|event| event == "governance.manifest.denied"));
+}
+
+#[test]
+fn denies_manifest_schema_version_mismatch() {
+    let mut policy = StaticPolicyEngine::default();
+    policy.allow_capability("example.safe-github", "demo", "repo.read");
+
+    let audit = MemoryAuditSink::default();
+    let runtime = OrchestratorRuntime::new(policy, audit.clone(), DryRunExecutor);
+    let outcome = runtime
+        .handle_action_with_manifest(
+            request_for("example.safe-github", "repo.read"),
+            &CapabilityManifest {
+                schema_version: 2,
+                plugin: "example.safe-github".to_string(),
+                capabilities: vec![DelegationCapability {
+                    id: "repo.read".to_string(),
+                    scope: vec!["project".to_string()],
+                }],
+            },
+        )
+        .expect("outcome");
+
+    assert_eq!(outcome.status, ActionStatus::Blocked);
+    assert_eq!(outcome.detail, "manifest_schema_version_unsupported");
+    assert!(audit
+        .events()
+        .iter()
+        .any(|event| event == "governance.manifest.denied"));
+}
+
+#[test]
+fn denies_scope_not_granted_by_manifest() {
+    let mut policy = StaticPolicyEngine::default();
+    policy.allow_capability("example.safe-github", "demo", "repo.read");
+
+    let audit = MemoryAuditSink::default();
+    let runtime = OrchestratorRuntime::new(policy, audit.clone(), DryRunExecutor);
+    let outcome = runtime
+        .handle_action_with_manifest(
+            request_for_with_scope("example.safe-github", "repo.read", &["tenant"]),
+            &manifest_allowing("example.safe-github", "repo.read"),
+        )
+        .expect("outcome");
+
+    assert_eq!(outcome.status, ActionStatus::Blocked);
+    assert_eq!(outcome.detail, "manifest_scope_not_granted");
     assert!(audit
         .events()
         .iter()

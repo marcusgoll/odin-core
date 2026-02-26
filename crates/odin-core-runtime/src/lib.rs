@@ -340,7 +340,12 @@ where
         manifest: &CapabilityManifest,
     ) -> RuntimeResult<ActionOutcome> {
         validate_capability(&request.capability)?;
-        if let Some(reason_code) = manifest_denial_reason(&request, manifest) {
+        let manifest_denial = if manifest.schema_version != 1 {
+            Some("manifest_schema_version_unsupported".to_string())
+        } else {
+            manifest_denial_reason(&request, manifest)
+        };
+        if let Some(reason_code) = manifest_denial {
             self.audit.record(AuditRecord {
                 ts_unix: now_unix(),
                 event_type: "governance.manifest.denied".to_string(),
@@ -654,12 +659,19 @@ fn manifest_denial_reason(
         return Some("manifest_plugin_mismatch".to_string());
     }
 
-    if !manifest
+    let matching_capabilities = manifest
         .capabilities
         .iter()
-        .any(|capability| capability.id == request.capability.capability)
-    {
+        .filter(|capability| capability.id == request.capability.capability)
+        .collect::<Vec<_>>();
+    if matching_capabilities.is_empty() {
         return Some("manifest_capability_not_granted".to_string());
+    }
+    if !matching_capabilities
+        .iter()
+        .any(|granted| manifest_scope_permits(&request.capability.scope, &granted.scope))
+    {
+        return Some("manifest_scope_not_granted".to_string());
     }
 
     let capability = request.capability.capability.as_str();
@@ -679,7 +691,13 @@ fn stagehand_permission_denial(
         return None;
     }
 
-    let action = stagehand_action_from_capability(capability, input)?;
+    let action = match stagehand_action_from_capability(capability, input) {
+        Some(action) => action,
+        None if capability.starts_with("stagehand.") => {
+            return Some("manifest_stagehand_capability_unknown".to_string())
+        }
+        None => return None,
+    };
     let policy = stagehand_policy_from_envelope(&PluginPermissionEnvelope {
         plugin: manifest.plugin.clone(),
         trust_level: TrustLevel::Caution,
@@ -722,6 +740,18 @@ fn input_string(input: &Value, key: &str) -> Option<String> {
         .get(key)
         .and_then(Value::as_str)
         .map(ToOwned::to_owned)
+}
+
+fn manifest_scope_permits(requested_scope: &[String], granted_scope: &[String]) -> bool {
+    if requested_scope.is_empty() {
+        return true;
+    }
+    if granted_scope.is_empty() {
+        return false;
+    }
+    requested_scope
+        .iter()
+        .all(|requested| granted_scope.iter().any(|granted| granted == requested))
 }
 
 fn now_unix() -> u64 {
