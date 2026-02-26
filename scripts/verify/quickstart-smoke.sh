@@ -26,6 +26,33 @@ cleanup() {
 }
 trap cleanup EXIT
 
+MISSING_GUARDRAILS_PATH="/tmp/odin-quickstart-missing-guardrails.yaml"
+LAST_OUTPUT=""
+
+run_wrapper_contract() {
+  local label="$1"
+  shift
+  echo "[quickstart] RUN ${label}"
+  if ! LAST_OUTPUT="$(ODIN_GUARDRAILS_PATH="${MISSING_GUARDRAILS_PATH}" scripts/odin/odin "$@" 2>&1)"; then
+    echo "[quickstart] ERROR ${label}" >&2
+    echo "${LAST_OUTPUT}" >&2
+    exit 1
+  fi
+  echo "${LAST_OUTPUT}"
+  echo "[quickstart] PASS ${label}"
+}
+
+assert_last_output_contains() {
+  local label="$1"
+  local fragment="$2"
+  if ! grep -Fq "${fragment}" <<<"${LAST_OUTPUT}"; then
+    echo "[quickstart] ERROR ${label}: expected output to contain '${fragment}'" >&2
+    echo "${LAST_OUTPUT}" >&2
+    exit 1
+  fi
+  echo "[quickstart] PASS ${label}: ${fragment}"
+}
+
 if command -v docker >/dev/null 2>&1; then
   if docker compose version >/dev/null 2>&1; then
     echo "[quickstart] RUN docker compose config"
@@ -37,6 +64,25 @@ if command -v docker >/dev/null 2>&1; then
 else
   echo "[quickstart] WARN docker unavailable; skipping compose validation"
 fi
+
+run_wrapper_contract "wrapper connect dry-run contract" connect claude oauth --dry-run
+assert_last_output_contains "connect contract" "DRY-RUN connect provider=claude auth=oauth"
+
+run_wrapper_contract "wrapper start dry-run contract" start --dry-run
+assert_last_output_contains "start contract" "DRY-RUN start"
+
+run_wrapper_contract "wrapper tui dry-run contract" tui --dry-run
+assert_last_output_contains "tui contract" "DRY-RUN tui"
+
+run_wrapper_contract "wrapper inbox add dry-run contract" inbox add "bootstrap task" --dry-run
+assert_last_output_contains "inbox contract" "DRY-RUN inbox add title=bootstrap task"
+assert_last_output_contains "inbox normalized title" "title=bootstrap task"
+assert_last_output_contains "inbox normalized raw_text" "raw_text=bootstrap task"
+assert_last_output_contains "inbox normalized source" "source=cli"
+assert_last_output_contains "inbox normalized timestamp" "timestamp="
+
+run_wrapper_contract "wrapper verify dry-run contract" verify --dry-run
+assert_last_output_contains "verify contract" "DRY-RUN verify"
 
 echo "[quickstart] RUN cargo run bootstrap"
 timeout 30 cargo run -p odin-cli -- --run-once --config config/default.yaml >/tmp/odin_quickstart_cli.out 2>/tmp/odin_quickstart_cli.err
