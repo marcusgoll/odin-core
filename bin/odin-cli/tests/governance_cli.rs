@@ -241,6 +241,36 @@ fn governance_dispatch_handles_global_flag_before_subcommand() {
 }
 
 #[test]
+fn governance_dispatch_scans_past_unknown_leading_args() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let registry_path = write_project_registry(&temp_dir);
+
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
+        .args([
+            "--unknown",
+            "foo",
+            "governance",
+            "verify",
+            "--scope",
+            "project",
+            "--registry",
+        ])
+        .arg(&registry_path)
+        .arg("--run-once")
+        .output()
+        .expect("run verify with unknown leading args");
+
+    assert!(
+        !output.status.success(),
+        "verify should still run and fail checks for this registry"
+    );
+
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["command"], "verify");
+    assert!(json["checks"].is_array());
+}
+
+#[test]
 fn governance_enable_plugin_stagehand_allows_url_form_domain_probe() {
     let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
         .args([

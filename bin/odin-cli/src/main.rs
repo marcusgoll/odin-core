@@ -274,7 +274,9 @@ fn governance_subcommand_args<'a>(argv: &'a [String]) -> Option<&'a [String]> {
             other if other.starts_with("--") => {
                 index += 1;
             }
-            _ => return None,
+            _ => {
+                index += 1;
+            }
         }
     }
     None
