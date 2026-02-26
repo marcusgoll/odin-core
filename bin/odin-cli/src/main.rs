@@ -608,6 +608,19 @@ fn governance_enable_plugin(args: &[String]) -> anyhow::Result<()> {
             }));
         }
 
+        for command in &commands {
+            let decision = policy.evaluate(Action::RunCommand(command.clone()));
+            if matches!(decision, PermissionDecision::Deny { .. }) {
+                has_denied_check = true;
+            }
+            checks.push(json!({
+                "name": "command_allowlist",
+                "value": command,
+                "decision": decision_name(&decision),
+                "reason": decision_reason(&decision),
+            }));
+        }
+
         if has_denied_check {
             emit_governance_summary(json!({
                 "command": "enable-plugin",

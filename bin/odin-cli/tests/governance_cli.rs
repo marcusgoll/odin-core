@@ -369,3 +369,43 @@ fn governance_enable_plugin_stagehand_blocks_when_later_values_deny() {
         "expected at least one denied policy check"
     );
 }
+
+#[test]
+fn governance_enable_plugin_stagehand_blocks_when_command_scope_denies() {
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
+        .args([
+            "governance",
+            "enable-plugin",
+            "--plugin",
+            "stagehand",
+            "--domains",
+            "example.com",
+            "--workspaces",
+            "/tmp",
+            "--commands",
+            "ls,cat file",
+            "--run-once",
+        ])
+        .output()
+        .expect("run stagehand enable with denied command scope");
+
+    assert!(
+        !output.status.success(),
+        "stagehand enable should fail when any command check denies"
+    );
+
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["command"], "enable-plugin");
+    assert_eq!(json["status"], "blocked");
+
+    let checks = json["checks"].as_array().expect("checks array");
+    let command_checks = checks
+        .iter()
+        .filter(|check| check["name"] == "command_allowlist")
+        .collect::<Vec<_>>();
+    assert_eq!(command_checks.len(), 2, "expected one check per command value");
+    assert!(
+        command_checks.iter().any(|check| check["decision"] == "deny"),
+        "expected a denied command check"
+    );
+}
