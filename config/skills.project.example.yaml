@@ -1,0 +1,19 @@
+schema_version: 1
+scope: project
+skills:
+  - name: brainstorming
+    trust_level: trusted
+    source: project:/skills/brainstorming
+    pinned_version: null
+    capabilities:
+      - id: design.review
+        scope:
+          - project
+  - name: stagehand
+    trust_level: caution
+    source: project:/skills/stagehand
+    pinned_version: null
+    capabilities:
+      - id: browser.observe
+        scope:
+          - "example.com"

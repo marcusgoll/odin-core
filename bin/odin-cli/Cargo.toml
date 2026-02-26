@@ -11,5 +11,11 @@ tracing.workspace = true
 odin-audit = { path = "../../crates/odin-audit" }
 odin-compat-bash = { path = "../../crates/odin-compat-bash" }
 odin-core-runtime = { path = "../../crates/odin-core-runtime" }
+odin-governance = { path = "../../crates/odin-governance" }
 odin-plugin-protocol = { path = "../../crates/odin-plugin-protocol" }
 odin-policy-engine = { path = "../../crates/odin-policy-engine" }
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
