@@ -129,6 +129,34 @@ fn governance_verify_prints_pass_fail_checks() {
 }
 
 #[test]
+fn governance_verify_without_registry_uses_non_example_default_and_fails_when_missing() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
+        .current_dir(temp_dir.path())
+        .args(["governance", "verify", "--scope", "project", "--run-once"])
+        .output()
+        .expect("run verify without explicit registry");
+
+    assert!(
+        !output.status.success(),
+        "verify should fail when default registry path is missing"
+    );
+
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["command"], "verify");
+    assert_eq!(json["status"], "failed");
+    assert_eq!(json["registry"], "config/skills.project.yaml");
+
+    let checks = json["checks"].as_array().expect("checks array");
+    let registry_check = checks
+        .iter()
+        .find(|check| check["name"] == "registry_load")
+        .expect("registry_load check");
+    assert_eq!(registry_check["status"], "fail");
+}
+
+#[test]
 fn governance_discover_invalid_scope_returns_json_error() {
     let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
         .args(["governance", "discover", "--scope", "invalid", "--run-once"])
@@ -244,4 +272,37 @@ fn governance_enable_plugin_stagehand_allows_url_form_domain_probe() {
         .find(|check| check["name"] == "domain_allowlist")
         .expect("domain check");
     assert_eq!(domain_check["decision"], "allow");
+}
+
+#[test]
+fn governance_enable_plugin_stagehand_returns_blocked_when_policy_checks_deny() {
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
+        .args([
+            "governance",
+            "enable-plugin",
+            "--plugin",
+            "stagehand",
+            "--domains",
+            "/",
+            "--workspaces",
+            "/",
+            "--run-once",
+        ])
+        .output()
+        .expect("run stagehand enable with denied policy checks");
+
+    assert!(
+        !output.status.success(),
+        "stagehand enable should fail when checks deny"
+    );
+
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["command"], "enable-plugin");
+    assert_eq!(json["status"], "blocked");
+
+    let checks = json["checks"].as_array().expect("checks array");
+    assert!(
+        checks.iter().any(|check| check["decision"] == "deny"),
+        "expected at least one denied policy check"
+    );
 }

@@ -192,7 +192,7 @@ fn next_arg_value(
 
 fn default_registry_path(scope: SkillScope) -> PathBuf {
     match scope {
-        SkillScope::Project => PathBuf::from("config/skills.project.example.yaml"),
+        SkillScope::Project => PathBuf::from("config/skills.project.yaml"),
         SkillScope::User => PathBuf::from("config/skills.user.yaml"),
         SkillScope::Global => PathBuf::from("config/skills.global.yaml"),
     }
@@ -578,6 +578,34 @@ fn governance_enable_plugin(args: &[String]) -> anyhow::Result<()> {
         let probe_domain = normalize_domain_probe_input(&domains[0]);
         let domain_check = policy.evaluate(Action::ObserveUrl(probe_domain));
         let workspace_check = policy.evaluate(Action::ReadWorkspace(workspaces[0].clone()));
+        let checks = json!([
+            {
+                "name": "domain_allowlist",
+                "decision": decision_name(&domain_check),
+                "reason": decision_reason(&domain_check),
+            },
+            {
+                "name": "workspace_allowlist",
+                "decision": decision_name(&workspace_check),
+                "reason": decision_reason(&workspace_check),
+            }
+        ]);
+
+        if matches!(domain_check, PermissionDecision::Deny { .. })
+            || matches!(workspace_check, PermissionDecision::Deny { .. })
+        {
+            emit_governance_summary(json!({
+                "command": "enable-plugin",
+                "status": "blocked",
+                "error_code": "policy_checks_denied",
+                "plugin": plugin,
+                "domains": domains,
+                "workspaces": workspaces,
+                "commands": commands,
+                "checks": checks,
+            }))?;
+            return Err(anyhow!("stagehand policy checks denied requested scope"));
+        }
 
         return emit_governance_summary(json!({
             "command": "enable-plugin",
@@ -586,18 +614,7 @@ fn governance_enable_plugin(args: &[String]) -> anyhow::Result<()> {
             "domains": domains,
             "workspaces": workspaces,
             "commands": commands,
-            "checks": [
-                {
-                    "name": "domain_allowlist",
-                    "decision": decision_name(&domain_check),
-                    "reason": decision_reason(&domain_check),
-                },
-                {
-                    "name": "workspace_allowlist",
-                    "decision": decision_name(&workspace_check),
-                    "reason": decision_reason(&workspace_check),
-                }
-            ]
+            "checks": checks
         }));
     }
 
