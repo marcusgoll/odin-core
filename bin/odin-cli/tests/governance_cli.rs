@@ -78,7 +78,7 @@ fn governance_enable_plugin_stagehand_requires_explicit_domains_and_workspaces()
             "governance",
             "enable-plugin",
             "--plugin",
-            "stagehand",
+            "Stagehand",
             "--run-once",
         ])
         .output()
@@ -108,7 +108,10 @@ fn governance_verify_prints_pass_fail_checks() {
         .output()
         .expect("run verify");
 
-    assert!(output.status.success(), "verify should succeed");
+    assert!(
+        !output.status.success(),
+        "verify should return non-zero if any check fails"
+    );
 
     let json = parse_stdout_json(&output);
     assert_eq!(json["command"], "verify");
@@ -123,4 +126,60 @@ fn governance_verify_prints_pass_fail_checks() {
         checks.iter().any(|check| check["status"] == "fail"),
         "expected at least one failing check"
     );
+}
+
+#[test]
+fn governance_discover_invalid_scope_returns_json_error() {
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
+        .args(["governance", "discover", "--scope", "invalid", "--run-once"])
+        .output()
+        .expect("run discover invalid scope");
+
+    assert!(!output.status.success(), "invalid scope should fail");
+
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["command"], "discover");
+    assert_eq!(json["status"], "error");
+    assert_eq!(json["error_code"], "invalid_scope");
+}
+
+#[test]
+fn governance_install_invalid_trust_level_returns_json_error() {
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
+        .args([
+            "governance",
+            "install",
+            "--name",
+            "test-skill",
+            "--trust-level",
+            "not-a-level",
+            "--run-once",
+        ])
+        .output()
+        .expect("run install invalid trust-level");
+
+    assert!(!output.status.success(), "invalid trust-level should fail");
+
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["command"], "install");
+    assert_eq!(json["status"], "error");
+    assert_eq!(json["error_code"], "invalid_trust_level");
+}
+
+#[test]
+fn governance_discover_missing_required_value_returns_json_error() {
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
+        .args(["governance", "discover", "--scope", "--run-once"])
+        .output()
+        .expect("run discover missing value");
+
+    assert!(
+        !output.status.success(),
+        "missing required option value should fail"
+    );
+
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["command"], "discover");
+    assert_eq!(json["status"], "error");
+    assert_eq!(json["error_code"], "missing_required_value");
 }

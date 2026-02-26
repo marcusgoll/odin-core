@@ -117,29 +117,77 @@ fn scope_name(scope: SkillScope) -> &'static str {
     }
 }
 
-fn parse_scope(value: &str) -> anyhow::Result<SkillScope> {
+#[derive(Clone, Debug)]
+struct GovernanceParseError {
+    error_code: &'static str,
+    detail: String,
+}
+
+impl GovernanceParseError {
+    fn new(error_code: &'static str, detail: impl Into<String>) -> Self {
+        Self {
+            error_code,
+            detail: detail.into(),
+        }
+    }
+}
+
+fn governance_error(
+    command: &str,
+    error_code: &str,
+    detail: impl Into<String>,
+) -> anyhow::Result<()> {
+    let detail = detail.into();
+    emit_governance_summary(json!({
+        "command": command,
+        "status": "error",
+        "error_code": error_code,
+        "detail": detail,
+    }))?;
+    Err(anyhow!(detail))
+}
+
+fn governance_parse_error(command: &str, err: GovernanceParseError) -> anyhow::Result<()> {
+    governance_error(command, err.error_code, err.detail)
+}
+
+fn parse_scope(value: &str) -> Result<SkillScope, GovernanceParseError> {
     match value.trim().to_ascii_lowercase().as_str() {
         "global" => Ok(SkillScope::Global),
         "project" => Ok(SkillScope::Project),
         "user" => Ok(SkillScope::User),
-        other => Err(anyhow!("invalid scope: {other}")),
+        other => Err(GovernanceParseError::new(
+            "invalid_scope",
+            format!("invalid scope: {other}"),
+        )),
     }
 }
 
-fn parse_trust_level(value: &str) -> anyhow::Result<TrustLevel> {
+fn parse_trust_level(value: &str) -> Result<TrustLevel, GovernanceParseError> {
     match value.trim().to_ascii_lowercase().as_str() {
         "trusted" => Ok(TrustLevel::Trusted),
         "caution" => Ok(TrustLevel::Caution),
         "untrusted" => Ok(TrustLevel::Untrusted),
-        other => Err(anyhow!("invalid trust level: {other}")),
+        other => Err(GovernanceParseError::new(
+            "invalid_trust_level",
+            format!("invalid trust level: {other}"),
+        )),
     }
 }
 
-fn next_arg_value(args: &[String], index: &mut usize, flag: &str) -> anyhow::Result<String> {
+fn next_arg_value(
+    args: &[String],
+    index: &mut usize,
+    flag: &str,
+) -> Result<String, GovernanceParseError> {
     *index += 1;
-    args.get(*index)
-        .cloned()
-        .ok_or_else(|| anyhow!("missing value for {flag}"))
+    match args.get(*index) {
+        Some(value) if !value.starts_with("--") => Ok(value.clone()),
+        _ => Err(GovernanceParseError::new(
+            "missing_required_value",
+            format!("missing value for {flag}"),
+        )),
+    }
 }
 
 fn default_registry_path(scope: SkillScope) -> PathBuf {
@@ -210,11 +258,20 @@ fn governance_discover(args: &[String]) -> anyhow::Result<()> {
     while index < args.len() {
         match args[index].as_str() {
             "--scope" => {
-                let value = next_arg_value(args, &mut index, "--scope")?;
-                scope = parse_scope(&value)?;
+                let value = match next_arg_value(args, &mut index, "--scope") {
+                    Ok(value) => value,
+                    Err(err) => return governance_parse_error("discover", err),
+                };
+                scope = match parse_scope(&value) {
+                    Ok(scope) => scope,
+                    Err(err) => return governance_parse_error("discover", err),
+                };
             }
             "--registry" => {
-                let value = next_arg_value(args, &mut index, "--registry")?;
+                let value = match next_arg_value(args, &mut index, "--registry") {
+                    Ok(value) => value,
+                    Err(err) => return governance_parse_error("discover", err),
+                };
                 registry_path = Some(PathBuf::from(value));
             }
             "--run-once" => {}
@@ -270,20 +327,41 @@ fn governance_install(args: &[String]) -> anyhow::Result<()> {
     while index < args.len() {
         match args[index].as_str() {
             "--name" => {
-                skill_name = Some(next_arg_value(args, &mut index, "--name")?);
+                let value = match next_arg_value(args, &mut index, "--name") {
+                    Ok(value) => value,
+                    Err(err) => return governance_parse_error("install", err),
+                };
+                skill_name = Some(value);
             }
             "--trust-level" => {
-                let value = next_arg_value(args, &mut index, "--trust-level")?;
-                trust_level = parse_trust_level(&value)?;
+                let value = match next_arg_value(args, &mut index, "--trust-level") {
+                    Ok(value) => value,
+                    Err(err) => return governance_parse_error("install", err),
+                };
+                trust_level = match parse_trust_level(&value) {
+                    Ok(level) => level,
+                    Err(err) => return governance_parse_error("install", err),
+                };
             }
             "--source" => {
-                source = next_arg_value(args, &mut index, "--source")?;
+                source = match next_arg_value(args, &mut index, "--source") {
+                    Ok(value) => value,
+                    Err(err) => return governance_parse_error("install", err),
+                };
             }
             "--script" => {
-                scripts.push(next_arg_value(args, &mut index, "--script")?);
+                let value = match next_arg_value(args, &mut index, "--script") {
+                    Ok(value) => value,
+                    Err(err) => return governance_parse_error("install", err),
+                };
+                scripts.push(value);
             }
             "--readme" => {
-                readme = Some(next_arg_value(args, &mut index, "--readme")?);
+                let value = match next_arg_value(args, &mut index, "--readme") {
+                    Ok(value) => value,
+                    Err(err) => return governance_parse_error("install", err),
+                };
+                readme = Some(value);
             }
             "--ack" => {
                 ack = Ack::Accepted;
@@ -362,18 +440,31 @@ fn governance_enable_plugin(args: &[String]) -> anyhow::Result<()> {
     while index < args.len() {
         match args[index].as_str() {
             "--plugin" => {
-                plugin = Some(next_arg_value(args, &mut index, "--plugin")?);
+                let value = match next_arg_value(args, &mut index, "--plugin") {
+                    Ok(value) => value,
+                    Err(err) => return governance_parse_error("enable-plugin", err),
+                };
+                plugin = Some(value);
             }
             "--domain" | "--domains" => {
-                let raw = next_arg_value(args, &mut index, "--domains")?;
+                let raw = match next_arg_value(args, &mut index, "--domains") {
+                    Ok(value) => value,
+                    Err(err) => return governance_parse_error("enable-plugin", err),
+                };
                 append_csv_values(&mut domains, &raw);
             }
             "--workspace" | "--workspaces" => {
-                let raw = next_arg_value(args, &mut index, "--workspaces")?;
+                let raw = match next_arg_value(args, &mut index, "--workspaces") {
+                    Ok(value) => value,
+                    Err(err) => return governance_parse_error("enable-plugin", err),
+                };
                 append_csv_values(&mut workspaces, &raw);
             }
             "--command" | "--commands" => {
-                let raw = next_arg_value(args, &mut index, "--commands")?;
+                let raw = match next_arg_value(args, &mut index, "--commands") {
+                    Ok(value) => value,
+                    Err(err) => return governance_parse_error("enable-plugin", err),
+                };
                 append_csv_values(&mut commands, &raw);
             }
             "--run-once" => {}
@@ -403,7 +494,8 @@ fn governance_enable_plugin(args: &[String]) -> anyhow::Result<()> {
         return Err(anyhow!("missing --plugin"));
     };
 
-    if plugin == "stagehand" {
+    let normalized_plugin = plugin.trim().to_ascii_lowercase();
+    if normalized_plugin == "stagehand" {
         let mut reasons = Vec::new();
         if domains.is_empty() {
             reasons.push("domains_required");
@@ -447,7 +539,7 @@ fn governance_enable_plugin(args: &[String]) -> anyhow::Result<()> {
         }
 
         let envelope = PluginPermissionEnvelope {
-            plugin: plugin.clone(),
+            plugin: normalized_plugin,
             trust_level: TrustLevel::Caution,
             permissions,
         };
@@ -495,11 +587,20 @@ fn governance_verify(args: &[String]) -> anyhow::Result<()> {
     while index < args.len() {
         match args[index].as_str() {
             "--scope" => {
-                let value = next_arg_value(args, &mut index, "--scope")?;
-                scope = parse_scope(&value)?;
+                let value = match next_arg_value(args, &mut index, "--scope") {
+                    Ok(value) => value,
+                    Err(err) => return governance_parse_error("verify", err),
+                };
+                scope = match parse_scope(&value) {
+                    Ok(scope) => scope,
+                    Err(err) => return governance_parse_error("verify", err),
+                };
             }
             "--registry" => {
-                let value = next_arg_value(args, &mut index, "--registry")?;
+                let value = match next_arg_value(args, &mut index, "--registry") {
+                    Ok(value) => value,
+                    Err(err) => return governance_parse_error("verify", err),
+                };
                 registry_path = Some(PathBuf::from(value));
             }
             "--run-once" => {}
@@ -575,18 +676,27 @@ fn governance_verify(args: &[String]) -> anyhow::Result<()> {
         .filter(|check| check.get("status").and_then(|v| v.as_str()) == Some("fail"))
         .count();
 
+    let overall = if fail_count == 0 { "pass" } else { "fail" };
+    let status = if fail_count == 0 { "ok" } else { "failed" };
+
     emit_governance_summary(json!({
         "command": "verify",
-        "status": "ok",
+        "status": status,
         "scope": scope_name(scope),
         "registry": registry_path.display().to_string(),
         "summary": {
             "pass": pass_count,
             "fail": fail_count,
-            "overall": if fail_count == 0 { "pass" } else { "fail" },
+            "overall": overall,
         },
         "checks": checks,
-    }))
+    }))?;
+
+    if fail_count > 0 {
+        return Err(anyhow!("governance verification failed"));
+    }
+
+    Ok(())
 }
 
 fn handle_governance_command(args: &[String]) -> anyhow::Result<()> {
