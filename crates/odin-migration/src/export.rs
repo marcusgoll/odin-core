@@ -6,18 +6,18 @@ use anyhow::Context;
 use crate::checksum;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RootSelector {
+pub(crate) enum RootSelector {
     SourceRoot,
     OdinDir,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct SectionMapping {
-    name: &'static str,
-    source: RootSelector,
+pub(crate) struct SectionMapping {
+    pub(crate) name: &'static str,
+    pub(crate) source: RootSelector,
 }
 
-const SECTION_MAPPINGS: [SectionMapping; 8] = [
+pub(crate) const SECTION_MAPPINGS: [SectionMapping; 8] = [
     SectionMapping {
         name: "skills",
         source: RootSelector::SourceRoot,

@@ -56,7 +56,7 @@ Export legacy data into migration artifacts.
 ";
 
 const MIGRATE_VALIDATE_HELP: &str = "\
-Usage: odin-cli migrate validate
+Usage: odin-cli migrate validate --bundle <bundle-dir>
 
 Validate migration artifacts.
 ";
@@ -145,6 +145,26 @@ fn parse_inventory_flags(args: &[String]) -> anyhow::Result<(PathBuf, PathBuf)> 
     Ok((input_dir, output_path))
 }
 
+fn parse_validate_flags(args: &[String]) -> anyhow::Result<PathBuf> {
+    let mut bundle_dir: Option<PathBuf> = None;
+
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--bundle" => {
+                let Some(value) = args.get(index + 1) else {
+                    anyhow::bail!("missing value for --bundle");
+                };
+                bundle_dir = Some(PathBuf::from(value));
+                index += 2;
+            }
+            other => anyhow::bail!("unknown migrate validate argument: {other}"),
+        }
+    }
+
+    bundle_dir.ok_or_else(|| anyhow::anyhow!("missing required flag: --bundle"))
+}
+
 fn reject_trailing_migrate_args(command: &str, args: &[String]) -> anyhow::Result<()> {
     if args.is_empty() {
         return Ok(());
@@ -197,8 +217,8 @@ fn handle_migrate_args(args: &[String]) -> anyhow::Result<bool> {
                 }
                 println!("{MIGRATE_VALIDATE_HELP}");
             } else {
-                reject_trailing_migrate_args("validate", sub_args)?;
-                run_migration_command(MigrationCommand::Validate)?;
+                let bundle_dir = parse_validate_flags(sub_args)?;
+                run_migration_command(MigrationCommand::Validate { bundle_dir })?;
             }
             Ok(true)
         }
@@ -407,7 +427,7 @@ mod tests {
 
     #[test]
     fn migrate_validate_import_reject_unexpected_trailing_args() {
-        for command in ["validate", "import"] {
+        for command in ["import"] {
             let result = handle_migrate_args(&args(&["migrate", command, "extra"]));
             let err = result.expect_err("trailing args should fail");
             assert!(
@@ -417,6 +437,44 @@ mod tests {
                 "unexpected error for command {command}: {err:#}"
             );
         }
+    }
+
+    #[test]
+    fn migrate_validate_requires_bundle_flag() {
+        let result = handle_migrate_args(&args(&["migrate", "validate"]));
+        let err = result.expect_err("missing validate flags should fail");
+        assert!(
+            err.to_string().contains("missing required flag: --bundle"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn migrate_validate_rejects_unknown_flag() {
+        let result = handle_migrate_args(&args(&[
+            "migrate",
+            "validate",
+            "--bundle",
+            "/tmp/bundle",
+            "--bogus",
+        ]));
+        let err = result.expect_err("unknown validate flags should fail");
+        assert!(
+            err.to_string()
+                .contains("unknown migrate validate argument: --bogus"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn migrate_validate_help_rejects_trailing_args() {
+        let result = handle_migrate_args(&args(&["migrate", "validate", "--help", "extra"]));
+        let err = result.expect_err("help with trailing args should fail");
+        assert!(
+            err.to_string()
+                .contains("unexpected argument(s) for migrate validate: extra"),
+            "unexpected error: {err:#}"
+        );
     }
 
     #[test]

@@ -95,17 +95,17 @@ fn migrate_export_without_required_flags_exits_non_zero() {
 }
 
 #[test]
-fn migrate_validate_without_extra_args_delegates_to_stub() {
+fn migrate_validate_without_bundle_flag_exits_non_zero() {
     let output = run_cli(&["migrate", "validate"]).expect("odin-cli should return promptly");
     assert!(
-        output.status.success(),
+        !output.status.success(),
         "stdout:\n{}\nstderr:\n{}",
         stdout_text(&output),
         stderr_text(&output)
     );
 
-    let stdout = stdout_text(&output);
-    assert!(stdout.contains("migrate validate is not implemented yet"));
+    let stderr = stderr_text(&output);
+    assert!(stderr.contains("missing required flag: --bundle"));
 }
 
 #[test]
