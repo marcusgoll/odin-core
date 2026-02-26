@@ -93,10 +93,7 @@ fn skill_validate_handles_valid_and_invalid_sass_files() {
 
 #[test]
 fn skill_validate_accepts_canonical_sass_examples() {
-    for file_name in [
-        "resolve_project.skill.xml",
-        "interpret_results.skill.xml",
-    ] {
+    for file_name in ["resolve_project.skill.xml", "interpret_results.skill.xml"] {
         let path = fixture_path(file_name);
         let path_str = path.to_str().expect("fixture path must be utf-8");
 
@@ -147,7 +144,9 @@ fn skill_validate_fails_when_decision_transitions_missing_guards() {
         invalid.stderr
     );
     assert!(
-        invalid.stderr.contains("decision transitions without guards"),
+        invalid
+            .stderr
+            .contains("decision transitions without guards"),
         "expected stderr to mention decision guard error\nstderr:\n{}",
         invalid.stderr
     );

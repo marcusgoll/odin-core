@@ -346,7 +346,9 @@ fn maybe_run_skill_command(args: &[String]) -> Option<anyhow::Result<()>> {
     }
 
     if args.len() != 3 {
-        return Some(Err(anyhow!("usage: odin-cli skill <validate|mermaid> <path>")));
+        return Some(Err(anyhow!(
+            "usage: odin-cli skill <validate|mermaid> <path>"
+        )));
     }
 
     let command = args[1].as_str();
