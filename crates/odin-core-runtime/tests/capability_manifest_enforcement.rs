@@ -242,3 +242,46 @@ fn emits_manifest_validated_and_capability_used_events_on_success() {
         .iter()
         .any(|event| event == "governance.capability.used"));
 }
+
+#[test]
+fn executes_stagehand_observe_domain_with_domain_input() {
+    let mut policy = StaticPolicyEngine::default();
+    policy.allow_capability("stagehand", "demo", "stagehand.observe_domain");
+
+    let audit = MemoryAuditSink::default();
+    let runtime = OrchestratorRuntime::new(policy, audit.clone(), DryRunExecutor);
+    let outcome = runtime
+        .handle_action_with_manifest(
+            ActionRequest {
+                request_id: "req-stagehand-observe-domain".to_string(),
+                risk_tier: RiskTier::Safe,
+                capability: CapabilityRequest {
+                    plugin: "stagehand".to_string(),
+                    project: "demo".to_string(),
+                    capability: "stagehand.observe_domain".to_string(),
+                    scope: vec!["example.com".to_string()],
+                    reason: "unit test".to_string(),
+                },
+                input: serde_json::json!({
+                    "domain": "example.com"
+                }),
+            },
+            &CapabilityManifest {
+                schema_version: 1,
+                plugin: "stagehand".to_string(),
+                capabilities: vec![
+                    DelegationCapability {
+                        id: "stagehand.enabled".to_string(),
+                        scope: vec![],
+                    },
+                    DelegationCapability {
+                        id: "stagehand.observe_domain".to_string(),
+                        scope: vec!["example.com".to_string()],
+                    },
+                ],
+            },
+        )
+        .expect("outcome");
+
+    assert_eq!(outcome.status, ActionStatus::Executed);
+}

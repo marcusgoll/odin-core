@@ -720,9 +720,12 @@ fn stagehand_permission_denial(
 
 fn stagehand_action_from_capability(capability: &str, input: &Value) -> Option<StagehandAction> {
     match capability {
-        "browser.observe" | "stagehand.observe_url" | "stagehand.observe_domain" => Some(
-            StagehandAction::ObserveUrl(input_string(input, "url").unwrap_or_default()),
-        ),
+        "browser.observe" | "stagehand.observe_url" => Some(StagehandAction::ObserveUrl(
+            input_string(input, "url").unwrap_or_default(),
+        )),
+        "stagehand.observe_domain" => Some(StagehandAction::ObserveUrl(
+            canonical_observe_domain_input(input),
+        )),
         "workspace.read" | "stagehand.workspace.read" => Some(StagehandAction::ReadWorkspace(
             input_string(input, "workspace").unwrap_or_default(),
         )),
@@ -734,6 +737,20 @@ fn stagehand_action_from_capability(capability: &str, input: &Value) -> Option<S
         "stagehand.pii_submit" => Some(StagehandAction::PiiSubmit),
         "stagehand.file_upload" => Some(StagehandAction::FileUpload),
         _ => None,
+    }
+}
+
+fn canonical_observe_domain_input(input: &Value) -> String {
+    let value = input_string(input, "domain")
+        .or_else(|| input_string(input, "url"))
+        .unwrap_or_default();
+    let trimmed = value.trim();
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else if trimmed.is_empty() {
+        String::new()
+    } else {
+        format!("https://{trimmed}")
     }
 }
 
