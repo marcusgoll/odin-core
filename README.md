@@ -66,6 +66,23 @@ bash scripts/verify/quickstart-smoke.sh
 bash scripts/verify/plugin-install-matrix.sh
 ```
 
+## SASS skills (strict mode)
+
+SASS v0.1 is the state-aware skill system used by Odin. Strict mode requires `wake_up`,
+explicit end states, guarded decision branches, and least-privilege permissions.
+
+Read the full contract and migration guide:
+
+- `docs/skill-system.md`
+
+Common commands:
+
+```bash
+cargo run -p odin-cli -- skill validate examples/skills/sass/v0.1/run_tests.skill.xml
+cargo run -p odin-cli -- skill mermaid examples/skills/sass/v0.1/run_tests.skill.xml
+bash scripts/verify/sass-skill-governance-smoke.sh
+```
+
 ## Scope
 
 - Core orchestration runtime
