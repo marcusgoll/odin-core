@@ -103,22 +103,21 @@ def check_transitions(path: Path, runtime: ET.Element):
         if state_types.get(frm) == "exit":
             add_error(f"{path}: exit state '{frm}' must not have outgoing transitions")
 
-    # Required contract: XML examples must include guard checks.
-    if path.parent.name == "examples":
-        if not guard_defs:
-            add_error(f"{path}: example must define guards")
-            return
-        for transition in transitions:
-            frm = transition.attrib.get("from", "")
-            frm_type = state_types.get(frm, "")
-            if frm_type in ("failure", "exit"):
-                continue
-            guard_ref = transition.attrib.get("guard_ref")
-            if not guard_ref:
-                add_error(f"{path}: missing guard_ref on operational transition from '{frm}'")
-                continue
-            if guard_ref not in guard_defs:
-                add_error(f"{path}: guard_ref '{guard_ref}' not declared in <guards>")
+    # Required contract: skill XMLs must include guard checks on operational transitions.
+    if not guard_defs:
+        add_error(f"{path}: missing <guards> definitions")
+        return
+    for transition in transitions:
+        frm = transition.attrib.get("from", "")
+        frm_type = state_types.get(frm, "")
+        if frm_type in ("failure", "exit"):
+            continue
+        guard_ref = transition.attrib.get("guard_ref")
+        if not guard_ref:
+            add_error(f"{path}: missing guard_ref on operational transition from '{frm}'")
+            continue
+        if guard_ref not in guard_defs:
+            add_error(f"{path}: guard_ref '{guard_ref}' not declared in <guards>")
 
 template_path = Path("docs/odin/skills/templates/skill.template.xml")
 example_paths = sorted(Path("docs/odin/skills/examples").glob("*.skill.xml"))

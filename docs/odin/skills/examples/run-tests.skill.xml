@@ -29,8 +29,11 @@
       <guard id="guard_workspace_found" expr="workspace.exists == true"/>
       <guard id="guard_workspace_missing" expr="workspace.exists == false"/>
       <guard id="guard_project_known" expr="project.detected == true"/>
+      <guard id="guard_project_unknown" expr="project.detected == false"/>
       <guard id="guard_runtime_ready" expr="runtime.available == true"/>
+      <guard id="guard_runtime_missing" expr="runtime.available == false"/>
       <guard id="guard_tests_discovered" expr="tests.count &gt; 0"/>
+      <guard id="guard_tests_missing" expr="tests.count == 0"/>
       <guard id="guard_exec_ok" expr="exec.status in ['passed','failed']"/>
       <guard id="guard_exec_error" expr="exec.status == 'error'"/>
       <guard id="guard_retry_allowed" expr="attempt_count &lt; 2"/>
@@ -69,13 +72,13 @@
       <transition from="detect_workspace" to="failure_permission_denied" on="workspace_missing" guard_ref="guard_workspace_missing"/>
 
       <transition from="resolve_project" to="ensure_runtime" on="project_detected" guard_ref="guard_project_known"/>
-      <transition from="resolve_project" to="failure_unknown_project" on="project_unknown" guard_ref="guard_workspace_found"/>
+      <transition from="resolve_project" to="failure_unknown_project" on="project_unknown" guard_ref="guard_project_unknown"/>
 
       <transition from="ensure_runtime" to="discover_tests" on="runtime_ready" guard_ref="guard_runtime_ready"/>
-      <transition from="ensure_runtime" to="failure_missing_runtime" on="runtime_missing" guard_ref="guard_project_known"/>
+      <transition from="ensure_runtime" to="failure_missing_runtime" on="runtime_missing" guard_ref="guard_runtime_missing"/>
 
       <transition from="discover_tests" to="execute_tests" on="tests_found" guard_ref="guard_tests_discovered"/>
-      <transition from="discover_tests" to="failure_tests_not_found" on="tests_missing" guard_ref="guard_runtime_ready"/>
+      <transition from="discover_tests" to="failure_tests_not_found" on="tests_missing" guard_ref="guard_tests_missing"/>
 
       <transition from="execute_tests" to="interpret_result" on="exec_complete" guard_ref="guard_exec_ok"/>
       <transition from="execute_tests" to="failure_execution_error" on="exec_error" guard_ref="guard_exec_error"/>
