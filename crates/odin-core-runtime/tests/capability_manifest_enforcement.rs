@@ -197,6 +197,28 @@ fn denies_scope_not_granted_by_manifest() {
 }
 
 #[test]
+fn denies_empty_request_scope_when_manifest_scope_is_constrained() {
+    let mut policy = StaticPolicyEngine::default();
+    policy.allow_capability("example.safe-github", "demo", "repo.read");
+
+    let audit = MemoryAuditSink::default();
+    let runtime = OrchestratorRuntime::new(policy, audit.clone(), DryRunExecutor);
+    let outcome = runtime
+        .handle_action_with_manifest(
+            request_for_with_scope("example.safe-github", "repo.read", &[]),
+            &manifest_allowing("example.safe-github", "repo.read"),
+        )
+        .expect("outcome");
+
+    assert_eq!(outcome.status, ActionStatus::Blocked);
+    assert_eq!(outcome.detail, "manifest_scope_not_granted");
+    assert!(audit
+        .events()
+        .iter()
+        .any(|event| event == "governance.manifest.denied"));
+}
+
+#[test]
 fn emits_manifest_validated_and_capability_used_events_on_success() {
     let mut policy = StaticPolicyEngine::default();
     policy.allow_capability("example.safe-github", "demo", "repo.read");

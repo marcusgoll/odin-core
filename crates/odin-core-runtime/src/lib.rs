@@ -744,7 +744,7 @@ fn input_string(input: &Value, key: &str) -> Option<String> {
 
 fn manifest_scope_permits(requested_scope: &[String], granted_scope: &[String]) -> bool {
     if requested_scope.is_empty() {
-        return true;
+        return granted_scope.is_empty();
     }
     if granted_scope.is_empty() {
         return false;
