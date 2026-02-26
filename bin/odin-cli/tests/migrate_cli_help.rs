@@ -81,17 +81,17 @@ fn migrate_import_help_surface_is_available() {
 }
 
 #[test]
-fn migrate_export_without_extra_args_delegates_to_stub() {
+fn migrate_export_without_required_flags_exits_non_zero() {
     let output = run_cli(&["migrate", "export"]).expect("odin-cli should return promptly");
     assert!(
-        output.status.success(),
+        !output.status.success(),
         "stdout:\n{}\nstderr:\n{}",
         stdout_text(&output),
         stderr_text(&output)
     );
 
-    let stdout = stdout_text(&output);
-    assert!(stdout.contains("migrate export is not implemented yet"));
+    let stderr = stderr_text(&output);
+    assert!(stderr.contains("missing required flag: --source-root"));
 }
 
 #[test]

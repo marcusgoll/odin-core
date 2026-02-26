@@ -1,3 +1,5 @@
+pub mod checksum;
+pub mod export;
 pub mod inventory;
 pub mod model;
 pub mod validate;
@@ -6,7 +8,11 @@ use std::path::PathBuf;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MigrationCommand {
-    Export,
+    Export {
+        source_root: PathBuf,
+        odin_dir: PathBuf,
+        out_dir: PathBuf,
+    },
     Validate,
     Import,
     Inventory {
@@ -17,8 +23,13 @@ pub enum MigrationCommand {
 
 pub fn run(command: MigrationCommand) -> anyhow::Result<()> {
     match command {
-        MigrationCommand::Export => {
-            println!("migrate export is not implemented yet");
+        MigrationCommand::Export {
+            source_root,
+            odin_dir,
+            out_dir,
+        } => {
+            export::write_bundle(&source_root, &odin_dir, &out_dir)?;
+            println!("migrate export bundle written to {}", out_dir.display());
         }
         MigrationCommand::Validate => {
             println!("migrate validate is not implemented yet");

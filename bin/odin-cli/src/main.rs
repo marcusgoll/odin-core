@@ -50,7 +50,7 @@ Commands:
 ";
 
 const MIGRATE_EXPORT_HELP: &str = "\
-Usage: odin-cli migrate export
+Usage: odin-cli migrate export --source-root <dir> --odin-dir <dir> --out <dir>
 
 Export legacy data into migration artifacts.
 ";
@@ -72,6 +72,47 @@ Usage: odin-cli migrate inventory --input <dir> --output <path>
 
 Create inventory snapshot from migration fixture data.
 ";
+
+fn parse_export_flags(args: &[String]) -> anyhow::Result<(PathBuf, PathBuf, PathBuf)> {
+    let mut source_root: Option<PathBuf> = None;
+    let mut odin_dir: Option<PathBuf> = None;
+    let mut out_dir: Option<PathBuf> = None;
+
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--source-root" => {
+                let Some(value) = args.get(index + 1) else {
+                    anyhow::bail!("missing value for --source-root");
+                };
+                source_root = Some(PathBuf::from(value));
+                index += 2;
+            }
+            "--odin-dir" => {
+                let Some(value) = args.get(index + 1) else {
+                    anyhow::bail!("missing value for --odin-dir");
+                };
+                odin_dir = Some(PathBuf::from(value));
+                index += 2;
+            }
+            "--out" => {
+                let Some(value) = args.get(index + 1) else {
+                    anyhow::bail!("missing value for --out");
+                };
+                out_dir = Some(PathBuf::from(value));
+                index += 2;
+            }
+            other => anyhow::bail!("unknown migrate export argument: {other}"),
+        }
+    }
+
+    let source_root =
+        source_root.ok_or_else(|| anyhow::anyhow!("missing required flag: --source-root"))?;
+    let odin_dir = odin_dir.ok_or_else(|| anyhow::anyhow!("missing required flag: --odin-dir"))?;
+    let out_dir = out_dir.ok_or_else(|| anyhow::anyhow!("missing required flag: --out"))?;
+
+    Ok((source_root, odin_dir, out_dir))
+}
 
 fn parse_inventory_flags(args: &[String]) -> anyhow::Result<(PathBuf, PathBuf)> {
     let mut input_dir: Option<PathBuf> = None;
@@ -127,20 +168,30 @@ fn handle_migrate_args(args: &[String]) -> anyhow::Result<bool> {
         }
         Some("export") => {
             let sub_args = &args[2..];
-            if matches!(sub_args.first().map(String::as_str), Some("--help") | Some("-h")) {
+            if matches!(
+                sub_args.first().map(String::as_str),
+                Some("--help") | Some("-h")
+            ) {
                 if sub_args.len() != 1 {
                     reject_trailing_migrate_args("export", &sub_args[1..])?;
                 }
                 println!("{MIGRATE_EXPORT_HELP}");
             } else {
-                reject_trailing_migrate_args("export", sub_args)?;
-                run_migration_command(MigrationCommand::Export)?;
+                let (source_root, odin_dir, out_dir) = parse_export_flags(sub_args)?;
+                run_migration_command(MigrationCommand::Export {
+                    source_root,
+                    odin_dir,
+                    out_dir,
+                })?;
             }
             Ok(true)
         }
         Some("validate") => {
             let sub_args = &args[2..];
-            if matches!(sub_args.first().map(String::as_str), Some("--help") | Some("-h")) {
+            if matches!(
+                sub_args.first().map(String::as_str),
+                Some("--help") | Some("-h")
+            ) {
                 if sub_args.len() != 1 {
                     reject_trailing_migrate_args("validate", &sub_args[1..])?;
                 }
@@ -153,7 +204,10 @@ fn handle_migrate_args(args: &[String]) -> anyhow::Result<bool> {
         }
         Some("import") => {
             let sub_args = &args[2..];
-            if matches!(sub_args.first().map(String::as_str), Some("--help") | Some("-h")) {
+            if matches!(
+                sub_args.first().map(String::as_str),
+                Some("--help") | Some("-h")
+            ) {
                 if sub_args.len() != 1 {
                     reject_trailing_migrate_args("import", &sub_args[1..])?;
                 }
@@ -166,7 +220,10 @@ fn handle_migrate_args(args: &[String]) -> anyhow::Result<bool> {
         }
         Some("inventory") => {
             let sub_args = &args[2..];
-            if matches!(sub_args.first().map(String::as_str), Some("--help") | Some("-h")) {
+            if matches!(
+                sub_args.first().map(String::as_str),
+                Some("--help") | Some("-h")
+            ) {
                 if sub_args.len() != 1 {
                     reject_trailing_migrate_args("inventory", &sub_args[1..])?;
                 }
@@ -349,16 +406,72 @@ mod tests {
     }
 
     #[test]
-    fn migrate_export_validate_import_reject_unexpected_trailing_args() {
-        for command in ["export", "validate", "import"] {
+    fn migrate_validate_import_reject_unexpected_trailing_args() {
+        for command in ["validate", "import"] {
             let result = handle_migrate_args(&args(&["migrate", command, "extra"]));
             let err = result.expect_err("trailing args should fail");
             assert!(
-                err.to_string()
-                    .contains(&format!("unexpected argument(s) for migrate {command}: extra")),
+                err.to_string().contains(&format!(
+                    "unexpected argument(s) for migrate {command}: extra"
+                )),
                 "unexpected error for command {command}: {err:#}"
             );
         }
+    }
+
+    #[test]
+    fn migrate_export_rejects_missing_required_flags() {
+        let result =
+            handle_migrate_args(&args(&["migrate", "export", "--source-root", "/tmp/src"]));
+        let err = result.expect_err("missing export flags should fail");
+        assert!(
+            err.to_string()
+                .contains("missing required flag: --odin-dir"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn migrate_export_without_required_flags_fails() {
+        let result = handle_migrate_args(&args(&["migrate", "export"]));
+        let err = result.expect_err("missing export flags should fail");
+        assert!(
+            err.to_string()
+                .contains("missing required flag: --source-root"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn migrate_export_rejects_unknown_flag() {
+        let result = handle_migrate_args(&args(&[
+            "migrate",
+            "export",
+            "--source-root",
+            "/tmp/src",
+            "--odin-dir",
+            "/tmp/odin",
+            "--out",
+            "/tmp/out",
+            "--bogus",
+        ]));
+        let err = result.expect_err("unknown export flags should fail");
+        assert!(
+            err.to_string()
+                .contains("unknown migrate export argument: --bogus"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn migrate_export_help_rejects_trailing_args() {
+        let result = handle_migrate_args(&args(&["migrate", "export", "--help", "extra"]));
+        let err = result.expect_err("help with trailing args should fail");
+        assert!(
+            err.to_string()
+                .contains("unexpected argument(s) for migrate export: extra"),
+            "unexpected error: {err:#}"
+        );
     }
 
     #[test]
