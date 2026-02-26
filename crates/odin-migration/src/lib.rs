@@ -1,3 +1,6 @@
+pub mod model;
+pub mod validate;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MigrationCommand {
     Export,
