@@ -30,10 +30,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - name: Plugin schema JSON validity
         run: jq empty schemas/plugin-manifest.v1.schema.json
       - name: Example manifest exists
         run: test -f examples/odin.plugin.yaml
+      - name: SASS skill governance smoke
+        run: bash scripts/verify/sass-skill-governance-smoke.sh
 
   secret-scan:
     runs-on: ubuntu-latest
