@@ -575,25 +575,38 @@ fn governance_enable_plugin(args: &[String]) -> anyhow::Result<()> {
         };
 
         let policy = stagehand_policy_from_envelope(&envelope);
-        let probe_domain = normalize_domain_probe_input(&domains[0]);
-        let domain_check = policy.evaluate(Action::ObserveUrl(probe_domain));
-        let workspace_check = policy.evaluate(Action::ReadWorkspace(workspaces[0].clone()));
-        let checks = json!([
-            {
-                "name": "domain_allowlist",
-                "decision": decision_name(&domain_check),
-                "reason": decision_reason(&domain_check),
-            },
-            {
-                "name": "workspace_allowlist",
-                "decision": decision_name(&workspace_check),
-                "reason": decision_reason(&workspace_check),
-            }
-        ]);
+        let mut checks = Vec::new();
+        let mut has_denied_check = false;
 
-        if matches!(domain_check, PermissionDecision::Deny { .. })
-            || matches!(workspace_check, PermissionDecision::Deny { .. })
-        {
+        for domain in &domains {
+            let probe_domain = normalize_domain_probe_input(domain);
+            let decision = policy.evaluate(Action::ObserveUrl(probe_domain.clone()));
+            if matches!(decision, PermissionDecision::Deny { .. }) {
+                has_denied_check = true;
+            }
+            checks.push(json!({
+                "name": "domain_allowlist",
+                "value": domain,
+                "probe": probe_domain,
+                "decision": decision_name(&decision),
+                "reason": decision_reason(&decision),
+            }));
+        }
+
+        for workspace in &workspaces {
+            let decision = policy.evaluate(Action::ReadWorkspace(workspace.clone()));
+            if matches!(decision, PermissionDecision::Deny { .. }) {
+                has_denied_check = true;
+            }
+            checks.push(json!({
+                "name": "workspace_allowlist",
+                "value": workspace,
+                "decision": decision_name(&decision),
+                "reason": decision_reason(&decision),
+            }));
+        }
+
+        if has_denied_check {
             emit_governance_summary(json!({
                 "command": "enable-plugin",
                 "status": "blocked",
