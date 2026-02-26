@@ -7,9 +7,13 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use odin_audit::{AuditError, AuditRecord, AuditSink};
+use odin_governance::plugins::{
+    stagehand_policy_from_envelope, Action as StagehandAction,
+    PermissionDecision as StagehandPermissionDecision,
+};
 use odin_plugin_protocol::{
-    ActionOutcome, ActionRequest, ActionStatus, CapabilityRequest, EventEnvelope, PluginManifest,
-    PolicyDecision, RiskTier,
+    ActionOutcome, ActionRequest, ActionStatus, CapabilityManifest, CapabilityRequest,
+    EventEnvelope, PluginManifest, PluginPermissionEnvelope, PolicyDecision, RiskTier, TrustLevel,
 };
 use odin_policy_engine::{PolicyEngine, PolicyError};
 use serde::{Deserialize, Serialize};
@@ -330,6 +334,69 @@ where
         }
     }
 
+    pub fn handle_action_with_manifest(
+        &self,
+        request: ActionRequest,
+        manifest: &CapabilityManifest,
+    ) -> RuntimeResult<ActionOutcome> {
+        validate_capability(&request.capability)?;
+        if let Some(reason_code) = manifest_denial_reason(&request, manifest) {
+            self.audit.record(AuditRecord {
+                ts_unix: now_unix(),
+                event_type: "governance.manifest.denied".to_string(),
+                request_id: Some(request.request_id.clone()),
+                task_id: None,
+                project: Some(request.capability.project.clone()),
+                metadata: serde_json::json!({
+                    "plugin": request.capability.plugin,
+                    "manifest_plugin": manifest.plugin,
+                    "capability": request.capability.capability,
+                    "reason_code": reason_code
+                }),
+            })?;
+            return Ok(ActionOutcome {
+                request_id: request.request_id,
+                status: ActionStatus::Blocked,
+                detail: reason_code,
+                output: Value::Null,
+            });
+        }
+
+        self.audit.record(AuditRecord {
+            ts_unix: now_unix(),
+            event_type: "governance.manifest.validated".to_string(),
+            request_id: Some(request.request_id.clone()),
+            task_id: None,
+            project: Some(request.capability.project.clone()),
+            metadata: serde_json::json!({
+                "plugin": request.capability.plugin,
+                "manifest_plugin": manifest.plugin,
+                "capability": request.capability.capability
+            }),
+        })?;
+
+        let request_id = request.request_id.clone();
+        let project = request.capability.project.clone();
+        let plugin = request.capability.plugin.clone();
+        let capability = request.capability.capability.clone();
+        let outcome = self.handle_action(request)?;
+        if outcome.status == ActionStatus::Executed {
+            self.audit.record(AuditRecord {
+                ts_unix: now_unix(),
+                event_type: "governance.capability.used".to_string(),
+                request_id: Some(request_id),
+                task_id: None,
+                project: Some(project),
+                metadata: serde_json::json!({
+                    "plugin": plugin,
+                    "capability": capability
+                }),
+            })?;
+        }
+
+        Ok(outcome)
+    }
+
     pub fn handle_watchdog_task<R, T>(
         &self,
         raw_task: &str,
@@ -577,6 +644,84 @@ fn validate_capability(capability: &CapabilityRequest) -> RuntimeResult<()> {
         ));
     }
     Ok(())
+}
+
+fn manifest_denial_reason(
+    request: &ActionRequest,
+    manifest: &CapabilityManifest,
+) -> Option<String> {
+    if manifest.plugin != request.capability.plugin {
+        return Some("manifest_plugin_mismatch".to_string());
+    }
+
+    if !manifest
+        .capabilities
+        .iter()
+        .any(|capability| capability.id == request.capability.capability)
+    {
+        return Some("manifest_capability_not_granted".to_string());
+    }
+
+    let capability = request.capability.capability.as_str();
+    if is_stagehand_capability(capability) && request.capability.plugin != "stagehand" {
+        return Some("plugin_permission_denied".to_string());
+    }
+
+    stagehand_permission_denial(capability, &request.input, manifest)
+}
+
+fn stagehand_permission_denial(
+    capability: &str,
+    input: &Value,
+    manifest: &CapabilityManifest,
+) -> Option<String> {
+    if manifest.plugin != "stagehand" {
+        return None;
+    }
+
+    let action = stagehand_action_from_capability(capability, input)?;
+    let policy = stagehand_policy_from_envelope(&PluginPermissionEnvelope {
+        plugin: manifest.plugin.clone(),
+        trust_level: TrustLevel::Caution,
+        permissions: manifest.capabilities.clone(),
+    });
+    match policy.evaluate(action) {
+        StagehandPermissionDecision::Allow { .. } => None,
+        StagehandPermissionDecision::Deny { reason_code } => Some(reason_code),
+    }
+}
+
+fn stagehand_action_from_capability(capability: &str, input: &Value) -> Option<StagehandAction> {
+    match capability {
+        "browser.observe" | "stagehand.observe_url" | "stagehand.observe_domain" => Some(
+            StagehandAction::ObserveUrl(input_string(input, "url").unwrap_or_default()),
+        ),
+        "workspace.read" | "stagehand.workspace.read" => Some(StagehandAction::ReadWorkspace(
+            input_string(input, "workspace").unwrap_or_default(),
+        )),
+        "command.run" | "stagehand.command.run" => Some(StagehandAction::RunCommand(
+            input_string(input, "command").unwrap_or_default(),
+        )),
+        "stagehand.login" => Some(StagehandAction::Login),
+        "stagehand.payment" => Some(StagehandAction::Payment),
+        "stagehand.pii_submit" => Some(StagehandAction::PiiSubmit),
+        "stagehand.file_upload" => Some(StagehandAction::FileUpload),
+        _ => None,
+    }
+}
+
+fn is_stagehand_capability(capability: &str) -> bool {
+    matches!(
+        capability,
+        "browser.observe" | "workspace.read" | "command.run"
+    ) || capability.starts_with("stagehand.")
+}
+
+fn input_string(input: &Value, key: &str) -> Option<String> {
+    input
+        .get(key)
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
 }
 
 fn now_unix() -> u64 {
