@@ -5,19 +5,21 @@
   </permissions>
   <wake_up state="load_artifacts" />
   <states initial_state="load_artifacts">
-    <state id="load_artifacts">
+    <state id="load_artifacts" on_failure="done">
       <transition event="artifacts_ready" target="classify_outcome" />
     </state>
-    <state id="classify_outcome">
-      <transition event="all_green" target="summarize_success" />
+    <state id="classify_outcome" on_failure="done">
+      <transition event="all_green" target="summarize_success">
+        <guard expression="failed_tests == 0" />
+      </transition>
       <transition event="has_failures" target="summarize_failures">
         <guard expression="failed_tests &gt; 0" />
       </transition>
     </state>
-    <state id="summarize_success">
+    <state id="summarize_success" on_failure="done">
       <transition event="summary_written" target="done" />
     </state>
-    <state id="summarize_failures">
+    <state id="summarize_failures" on_failure="done">
       <transition event="summary_written" target="done" />
     </state>
     <state id="done" end="true" />

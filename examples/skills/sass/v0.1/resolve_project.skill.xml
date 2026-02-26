@@ -5,18 +5,24 @@
   </permissions>
   <wake_up state="scan_workspace" />
   <states initial_state="scan_workspace">
-    <state id="scan_workspace">
+    <state id="scan_workspace" on_failure="done">
       <transition event="workspace_detected" target="resolve_targets" />
     </state>
-    <state id="resolve_targets">
-      <transition event="target_found" target="done" />
+    <state id="resolve_targets" on_failure="done">
+      <transition event="target_found" target="done">
+        <guard expression="true" />
+      </transition>
       <transition event="target_missing" target="fallback_lookup">
         <guard expression="allow_fallback == true" />
       </transition>
     </state>
-    <state id="fallback_lookup">
-      <transition event="fallback_resolved" target="done" />
-      <transition event="fallback_failed" target="done" />
+    <state id="fallback_lookup" on_failure="done">
+      <transition event="fallback_resolved" target="done">
+        <guard expression="true" />
+      </transition>
+      <transition event="fallback_failed" target="done">
+        <guard expression="true" />
+      </transition>
     </state>
     <state id="done" end="true" />
   </states>

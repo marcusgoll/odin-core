@@ -92,6 +92,30 @@ fn skill_validate_handles_valid_and_invalid_sass_files() {
 }
 
 #[test]
+fn skill_validate_accepts_canonical_sass_examples() {
+    for file_name in [
+        "resolve_project.skill.xml",
+        "interpret_results.skill.xml",
+    ] {
+        let path = fixture_path(file_name);
+        let path_str = path.to_str().expect("fixture path must be utf-8");
+
+        let result = run_cli(&["skill", "validate", path_str]);
+        assert!(
+            result.status.success(),
+            "expected success for canonical fixture {file_name}\nstdout:\n{}\nstderr:\n{}",
+            result.stdout,
+            result.stderr
+        );
+        assert!(
+            result.stdout.contains("validation ok"),
+            "expected validation ok output for canonical fixture {file_name}\nstdout:\n{}",
+            result.stdout
+        );
+    }
+}
+
+#[test]
 fn skill_validate_fails_when_non_end_states_missing_on_failure() {
     let invalid_path = fixture_path("broken-missing-on-failure.skill.xml");
     let invalid_path_str = invalid_path.to_str().expect("invalid path must be utf-8");
