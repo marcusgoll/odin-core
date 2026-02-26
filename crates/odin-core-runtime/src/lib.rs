@@ -13,7 +13,8 @@ use odin_governance::plugins::{
 };
 use odin_plugin_protocol::{
     ActionOutcome, ActionRequest, ActionStatus, CapabilityManifest, CapabilityRequest,
-    EventEnvelope, PluginManifest, PluginPermissionEnvelope, PolicyDecision, RiskTier, TrustLevel,
+    DelegationCapability, EventEnvelope, PluginManifest, PluginPermissionEnvelope, PolicyDecision,
+    RiskTier, TrustLevel,
 };
 use odin_policy_engine::{PolicyEngine, PolicyError};
 use serde::{Deserialize, Serialize};
@@ -456,7 +457,15 @@ where
                         },
                         input,
                     };
-                    outcomes.push(self.handle_action(request)?);
+                    let manifest = CapabilityManifest {
+                        schema_version: 1,
+                        plugin: request.capability.plugin.clone(),
+                        capabilities: vec![DelegationCapability {
+                            id: request.capability.capability.clone(),
+                            scope: request.capability.scope.clone(),
+                        }],
+                    };
+                    outcomes.push(self.handle_action_with_manifest(request, &manifest)?);
                 }
                 PluginDirective::EnqueueTask {
                     task_type,
@@ -771,7 +780,7 @@ fn decision_tag(decision: &PolicyDecision) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     use odin_audit::{AuditRecord, AuditSink};
     use odin_plugin_protocol::{ActionRequest, CapabilityRequest, RiskTier};
@@ -782,8 +791,18 @@ mod tests {
         PluginEventRunner, RuntimeError, TaskIngress,
     };
 
-    #[derive(Default)]
-    struct MemoryAuditSink(Mutex<Vec<AuditRecord>>);
+    #[derive(Clone, Default)]
+    struct MemoryAuditSink(Arc<Mutex<Vec<AuditRecord>>>);
+
+    impl MemoryAuditSink {
+        fn has_event(&self, event_type: &str) -> bool {
+            self.0
+                .lock()
+                .expect("lock")
+                .iter()
+                .any(|record| record.event_type == event_type)
+        }
+    }
 
     impl AuditSink for MemoryAuditSink {
         fn record(&self, record: AuditRecord) -> Result<(), odin_audit::AuditError> {
@@ -892,8 +911,8 @@ mod tests {
         let mut policy = StaticPolicyEngine::default();
         policy.allow_capability("private.ops-watchdog", "private", "monitoring.sentry.read");
 
-        let runtime =
-            OrchestratorRuntime::new(policy, MemoryAuditSink::default(), super::DryRunExecutor);
+        let audit = MemoryAuditSink::default();
+        let runtime = OrchestratorRuntime::new(policy, audit.clone(), super::DryRunExecutor);
         let ingress = MemoryIngress::default();
         let runner = StubRunner {
             directives: vec![PluginDirective::RequestCapability {
@@ -922,6 +941,7 @@ mod tests {
                 .and_then(|v| v.as_str()),
             Some("monitoring.sentry.read")
         );
+        assert!(audit.has_event("governance.manifest.validated"));
     }
 
     #[test]
