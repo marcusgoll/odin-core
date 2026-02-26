@@ -183,3 +183,65 @@ fn governance_discover_missing_required_value_returns_json_error() {
     assert_eq!(json["status"], "error");
     assert_eq!(json["error_code"], "missing_required_value");
 }
+
+#[test]
+fn governance_dispatch_handles_global_flag_before_subcommand() {
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let registry_path = write_project_registry(&temp_dir);
+
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
+        .args([
+            "--run-once",
+            "governance",
+            "discover",
+            "--scope",
+            "project",
+            "--registry",
+        ])
+        .arg(&registry_path)
+        .output()
+        .expect("run discover with leading global flag");
+
+    assert!(
+        output.status.success(),
+        "discover via leading global flag should succeed"
+    );
+
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["command"], "discover");
+    assert_eq!(json["status"], "ok");
+}
+
+#[test]
+fn governance_enable_plugin_stagehand_allows_url_form_domain_probe() {
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
+        .args([
+            "governance",
+            "enable-plugin",
+            "--plugin",
+            "stagehand",
+            "--domains",
+            "https://example.com",
+            "--workspaces",
+            "/tmp",
+            "--run-once",
+        ])
+        .output()
+        .expect("run stagehand enable with url domain");
+
+    assert!(
+        output.status.success(),
+        "stagehand enable should succeed with required policy inputs"
+    );
+
+    let json = parse_stdout_json(&output);
+    assert_eq!(json["command"], "enable-plugin");
+    assert_eq!(json["status"], "ok");
+
+    let checks = json["checks"].as_array().expect("checks array");
+    let domain_check = checks
+        .iter()
+        .find(|check| check["name"] == "domain_allowlist")
+        .expect("domain check");
+    assert_eq!(domain_check["decision"], "allow");
+}

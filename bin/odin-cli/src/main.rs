@@ -250,6 +250,36 @@ fn append_csv_values(target: &mut Vec<String>, raw: &str) {
     }
 }
 
+fn normalize_domain_probe_input(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else {
+        format!("https://{trimmed}/")
+    }
+}
+
+fn governance_subcommand_args<'a>(argv: &'a [String]) -> Option<&'a [String]> {
+    let mut index = 1;
+    while index < argv.len() {
+        match argv[index].as_str() {
+            "governance" => return Some(&argv[index + 1..]),
+            "--config" | "--legacy-root" | "--legacy-odin-dir" | "--plugins-root"
+            | "--task-file" => {
+                index += 2;
+            }
+            "--run-once" => {
+                index += 1;
+            }
+            other if other.starts_with("--") => {
+                index += 1;
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
 fn governance_discover(args: &[String]) -> anyhow::Result<()> {
     let mut scope = SkillScope::Project;
     let mut registry_path: Option<PathBuf> = None;
@@ -545,7 +575,7 @@ fn governance_enable_plugin(args: &[String]) -> anyhow::Result<()> {
         };
 
         let policy = stagehand_policy_from_envelope(&envelope);
-        let probe_domain = format!("https://{}/", domains[0]);
+        let probe_domain = normalize_domain_probe_input(&domains[0]);
         let domain_check = policy.evaluate(Action::ObserveUrl(probe_domain));
         let workspace_check = policy.evaluate(Action::ReadWorkspace(workspaces[0].clone()));
 
@@ -741,8 +771,8 @@ impl TaskIngress for StdoutTaskIngress {
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = env::args().collect();
-    if matches!(args.get(1).map(|arg| arg.as_str()), Some("governance")) {
-        return handle_governance_command(&args[2..]);
+    if let Some(governance_args) = governance_subcommand_args(&args) {
+        return handle_governance_command(governance_args);
     }
 
     let cfg = parse_cli_config();
