@@ -90,3 +90,41 @@ fn skill_validate_handles_valid_and_invalid_sass_files() {
         invalid.stderr
     );
 }
+
+#[test]
+fn skill_validate_fails_when_non_end_states_missing_on_failure() {
+    let invalid_path = fixture_path("broken-missing-on-failure.skill.xml");
+    let invalid_path_str = invalid_path.to_str().expect("invalid path must be utf-8");
+
+    let invalid = run_cli(&["skill", "validate", invalid_path_str]);
+    assert!(
+        !invalid.status.success(),
+        "expected failure for missing on_failure file\nstdout:\n{}\nstderr:\n{}",
+        invalid.stdout,
+        invalid.stderr
+    );
+    assert!(
+        invalid.stderr.contains("missing on_failure"),
+        "expected stderr to mention missing on_failure\nstderr:\n{}",
+        invalid.stderr
+    );
+}
+
+#[test]
+fn skill_validate_fails_when_decision_transitions_missing_guards() {
+    let invalid_path = fixture_path("broken-decision-missing-guards.skill.xml");
+    let invalid_path_str = invalid_path.to_str().expect("invalid path must be utf-8");
+
+    let invalid = run_cli(&["skill", "validate", invalid_path_str]);
+    assert!(
+        !invalid.status.success(),
+        "expected failure for decision state missing guards\nstdout:\n{}\nstderr:\n{}",
+        invalid.stdout,
+        invalid.stderr
+    );
+    assert!(
+        invalid.stderr.contains("decision transitions without guards"),
+        "expected stderr to mention decision guard error\nstderr:\n{}",
+        invalid.stderr
+    );
+}

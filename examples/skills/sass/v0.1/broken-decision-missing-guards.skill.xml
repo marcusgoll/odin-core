@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<skill skill_id="broken_decision_missing_guards" version="0.1">
+  <permissions>
+    <permission>read_repo</permission>
+  </permissions>
+  <wake_up state="collect_context" />
+  <states initial_state="collect_context">
+    <state id="collect_context" on_failure="failed">
+      <transition event="context_ready" target="select_path" />
+    </state>
+    <state id="select_path" on_failure="failed">
+      <transition event="path_a" target="path_a" />
+      <transition event="path_b" target="path_b" />
+    </state>
+    <state id="path_a" on_failure="failed">
+      <transition event="path_a_done" target="done" />
+    </state>
+    <state id="path_b" on_failure="failed">
+      <transition event="path_b_done" target="done" />
+    </state>
+    <state id="failed" end="true" />
+    <state id="done" end="true" />
+  </states>
+</skill>

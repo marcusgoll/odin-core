@@ -264,7 +264,6 @@ fn validate_skill(skill: &ParsedSkill, errors: &mut Vec<String>) {
     }
 
     for state in &skill.states {
-        let mut guarded_transitions = 0usize;
         let mut unguarded_transitions = 0usize;
 
         for transition in &state.transitions {
@@ -277,14 +276,12 @@ fn validate_skill(skill: &ParsedSkill, errors: &mut Vec<String>) {
                 }
             }
 
-            if transition.has_guard {
-                guarded_transitions += 1;
-            } else {
+            if !transition.has_guard {
                 unguarded_transitions += 1;
             }
         }
 
-        if guarded_transitions > 0 && unguarded_transitions > 1 {
+        if state.transitions.len() > 1 && unguarded_transitions > 0 {
             errors.push(format!(
                 "state '{}' has decision transitions without guards",
                 state.id
@@ -292,26 +289,19 @@ fn validate_skill(skill: &ParsedSkill, errors: &mut Vec<String>) {
         }
     }
 
-    let requires_on_failure = skill
-        .states
-        .iter()
-        .any(|state| !state.end && state.on_failure.is_some());
-
-    if requires_on_failure {
-        for state in skill.states.iter().filter(|state| !state.end) {
-            match &state.on_failure {
-                Some(target) if !state_ids.contains(target.as_str()) => {
-                    errors.push(format!(
-                        "state '{}' has on_failure target '{}' that does not exist",
-                        state.id, target
-                    ));
-                }
-                Some(_) => {}
-                None => errors.push(format!(
-                    "non-end state '{}' is missing on_failure",
-                    state.id
-                )),
+    for state in skill.states.iter().filter(|state| !state.end) {
+        match &state.on_failure {
+            Some(target) if !state_ids.contains(target.as_str()) => {
+                errors.push(format!(
+                    "state '{}' has on_failure target '{}' that does not exist",
+                    state.id, target
+                ));
             }
+            Some(_) => {}
+            None => errors.push(format!(
+                "non-end state '{}' is missing on_failure",
+                state.id
+            )),
         }
     }
 }

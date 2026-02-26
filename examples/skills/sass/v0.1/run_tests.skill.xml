@@ -6,19 +6,21 @@
   </permissions>
   <wake_up state="collect_context" />
   <states initial_state="collect_context">
-    <state id="collect_context">
+    <state id="collect_context" on_failure="report_failure">
       <transition event="context_ready" target="run_test_suite" />
     </state>
-    <state id="run_test_suite">
-      <transition event="tests_passed" target="report_success" />
+    <state id="run_test_suite" on_failure="report_failure">
+      <transition event="tests_passed" target="report_success">
+        <guard expression="failure_count == 0" />
+      </transition>
       <transition event="tests_failed" target="report_failure">
         <guard expression="failure_count &gt; 0" />
       </transition>
     </state>
-    <state id="report_success">
+    <state id="report_success" on_failure="report_failure">
       <transition event="reported" target="done" />
     </state>
-    <state id="report_failure">
+    <state id="report_failure" on_failure="done">
       <transition event="reported" target="done" />
     </state>
     <state id="done" end="true" />
