@@ -1,10 +1,11 @@
+use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use odin_audit::NoopAuditSink;
 use odin_compat_bash::{
     BashBackendStateAdapter, BashFailoverAdapter, BashTaskIngressAdapter, LegacyScriptPaths,
@@ -38,35 +39,40 @@ impl Default for CliConfig {
     }
 }
 
-fn parse_cli_config() -> CliConfig {
+fn parse_cli_config(args: &[String]) -> CliConfig {
     let mut cfg = CliConfig::default();
-    let mut args = env::args().skip(1);
+    let mut index = 0;
 
-    while let Some(arg) = args.next() {
+    while let Some(arg) = args.get(index) {
         match arg.as_str() {
             "--config" => {
-                if let Some(path) = args.next() {
-                    cfg.config_path = path;
+                if let Some(path) = args.get(index + 1) {
+                    cfg.config_path = path.to_string();
+                    index += 1;
                 }
             }
             "--legacy-root" => {
-                if let Some(path) = args.next() {
+                if let Some(path) = args.get(index + 1) {
                     cfg.legacy_root = Some(PathBuf::from(path));
+                    index += 1;
                 }
             }
             "--legacy-odin-dir" => {
-                if let Some(path) = args.next() {
+                if let Some(path) = args.get(index + 1) {
                     cfg.legacy_odin_dir = PathBuf::from(path);
+                    index += 1;
                 }
             }
             "--plugins-root" => {
-                if let Some(path) = args.next() {
+                if let Some(path) = args.get(index + 1) {
                     cfg.plugins_root = PathBuf::from(path);
+                    index += 1;
                 }
             }
             "--task-file" => {
-                if let Some(path) = args.next() {
+                if let Some(path) = args.get(index + 1) {
                     cfg.task_file = Some(PathBuf::from(path));
+                    index += 1;
                 }
             }
             "--run-once" => {
@@ -74,9 +80,259 @@ fn parse_cli_config() -> CliConfig {
             }
             _ => {}
         }
+        index += 1;
     }
 
     cfg
+}
+
+#[derive(Debug)]
+struct SkillTransition {
+    target: Option<String>,
+    has_guard: bool,
+}
+
+#[derive(Debug)]
+struct SkillState {
+    id: String,
+    end: bool,
+    on_failure: Option<String>,
+    transitions: Vec<SkillTransition>,
+}
+
+#[derive(Debug)]
+struct ParsedSkill {
+    wake_up_state: Option<String>,
+    states: Vec<SkillState>,
+}
+
+fn run_skill_validate(path: &str) -> anyhow::Result<()> {
+    let xml = fs::read_to_string(path).with_context(|| format!("failed to read {path}"))?;
+    let document = roxmltree::Document::parse(&xml)
+        .with_context(|| format!("failed to parse XML in {path}"))?;
+
+    let mut errors = Vec::new();
+    let parsed = parse_skill(&document, &mut errors);
+
+    if let Some(skill) = parsed {
+        validate_skill(&skill, &mut errors);
+    }
+
+    if !errors.is_empty() {
+        return Err(anyhow!("validation failed:\n- {}", errors.join("\n- ")));
+    }
+
+    println!("validation ok");
+    Ok(())
+}
+
+fn parse_skill(
+    document: &roxmltree::Document<'_>,
+    errors: &mut Vec<String>,
+) -> Option<ParsedSkill> {
+    let root = document.root_element();
+    if root.tag_name().name() != "skill" {
+        errors.push("root element must be <skill>".to_string());
+        return None;
+    }
+
+    let wake_up_node = root
+        .children()
+        .find(|node| node.is_element() && node.tag_name().name() == "wake_up");
+    let wake_up_state = wake_up_node
+        .and_then(|node| node.attribute("state"))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string);
+
+    if wake_up_node.is_none() {
+        errors.push("missing wake_up state".to_string());
+    } else if wake_up_state.is_none() {
+        errors.push("wake_up state must not be empty".to_string());
+    }
+
+    let states_node = match root
+        .children()
+        .find(|node| node.is_element() && node.tag_name().name() == "states")
+    {
+        Some(node) => node,
+        None => {
+            errors.push("missing <states> block".to_string());
+            return None;
+        }
+    };
+
+    let mut states = Vec::new();
+
+    for state_node in states_node
+        .children()
+        .filter(|node| node.is_element() && node.tag_name().name() == "state")
+    {
+        let id = match state_node
+            .attribute("id")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            Some(value) => value.to_string(),
+            None => {
+                errors.push("state is missing required id attribute".to_string());
+                continue;
+            }
+        };
+
+        let end = state_node
+            .attribute("end")
+            .map(|value| value.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let on_failure = state_node
+            .attribute("on_failure")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string);
+
+        let mut transitions = Vec::new();
+        for transition_node in state_node
+            .children()
+            .filter(|node| node.is_element() && node.tag_name().name() == "transition")
+        {
+            let target = transition_node
+                .attribute("target")
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string);
+
+            if target.is_none() {
+                errors.push(format!("state '{id}' has transition missing target"));
+            }
+
+            let guard_attr = transition_node
+                .attribute("guard")
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .is_some();
+            let guard_child = transition_node.children().any(|node| {
+                node.is_element()
+                    && node.tag_name().name() == "guard"
+                    && (node
+                        .attribute("expression")
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .is_some()
+                        || node
+                            .text()
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .is_some())
+            });
+
+            transitions.push(SkillTransition {
+                target,
+                has_guard: guard_attr || guard_child,
+            });
+        }
+
+        states.push(SkillState {
+            id,
+            end,
+            on_failure,
+            transitions,
+        });
+    }
+
+    if states.is_empty() {
+        errors.push("no states found under <states>".to_string());
+    }
+
+    Some(ParsedSkill {
+        wake_up_state,
+        states,
+    })
+}
+
+fn validate_skill(skill: &ParsedSkill, errors: &mut Vec<String>) {
+    let state_ids: HashSet<&str> = skill.states.iter().map(|state| state.id.as_str()).collect();
+
+    if let Some(wake_up_state) = &skill.wake_up_state {
+        if !state_ids.contains(wake_up_state.as_str()) {
+            errors.push(format!("wake_up state '{wake_up_state}' does not exist"));
+        }
+    }
+
+    let end_state_count = skill.states.iter().filter(|state| state.end).count();
+    if end_state_count == 0 {
+        errors.push("at least one end state is required".to_string());
+    }
+
+    for state in &skill.states {
+        let mut guarded_transitions = 0usize;
+        let mut unguarded_transitions = 0usize;
+
+        for transition in &state.transitions {
+            if let Some(target) = &transition.target {
+                if !state_ids.contains(target.as_str()) {
+                    errors.push(format!(
+                        "state '{}' transitions to unknown target '{}'",
+                        state.id, target
+                    ));
+                }
+            }
+
+            if transition.has_guard {
+                guarded_transitions += 1;
+            } else {
+                unguarded_transitions += 1;
+            }
+        }
+
+        if guarded_transitions > 0 && unguarded_transitions > 1 {
+            errors.push(format!(
+                "state '{}' has decision transitions without guards",
+                state.id
+            ));
+        }
+    }
+
+    let requires_on_failure = skill
+        .states
+        .iter()
+        .any(|state| !state.end && state.on_failure.is_some());
+
+    if requires_on_failure {
+        for state in skill.states.iter().filter(|state| !state.end) {
+            match &state.on_failure {
+                Some(target) if !state_ids.contains(target.as_str()) => {
+                    errors.push(format!(
+                        "state '{}' has on_failure target '{}' that does not exist",
+                        state.id, target
+                    ));
+                }
+                Some(_) => {}
+                None => errors.push(format!(
+                    "non-end state '{}' is missing on_failure",
+                    state.id
+                )),
+            }
+        }
+    }
+}
+
+fn maybe_run_skill_command(args: &[String]) -> Option<anyhow::Result<()>> {
+    if args.first().map(String::as_str) != Some("skill") {
+        return None;
+    }
+
+    if args.get(1).map(String::as_str) != Some("validate") {
+        return Some(Err(anyhow!(
+            "unsupported skill command, expected: odin-cli skill validate <path>"
+        )));
+    }
+
+    if args.len() != 3 {
+        return Some(Err(anyhow!("usage: odin-cli skill validate <path>")));
+    }
+
+    let path = &args[2];
+    Some(run_skill_validate(path))
 }
 
 fn sample_action_request() -> ActionRequest {
@@ -105,7 +361,12 @@ impl TaskIngress for StdoutTaskIngress {
 }
 
 fn main() -> anyhow::Result<()> {
-    let cfg = parse_cli_config();
+    let args: Vec<String> = env::args().skip(1).collect();
+    if let Some(result) = maybe_run_skill_command(&args) {
+        return result;
+    }
+
+    let cfg = parse_cli_config(&args);
     println!("odin-cli starting with config: {}", cfg.config_path);
     println!("plugins root: {}", cfg.plugins_root.display());
 

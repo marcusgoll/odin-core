@@ -8,6 +8,7 @@ license.workspace = true
 anyhow.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+roxmltree = "0.20"
 odin-audit = { path = "../../crates/odin-audit" }
 odin-compat-bash = { path = "../../crates/odin-compat-bash" }
 odin-core-runtime = { path = "../../crates/odin-core-runtime" }
