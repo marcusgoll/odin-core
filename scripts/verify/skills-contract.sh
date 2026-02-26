@@ -22,19 +22,19 @@ done
 
 echo "[skills-contract] PASS required files"
 
-rg -q '^# Odin Meta Prompt and Meta Skill Audit' docs/odin/skills/state-aware-skills-audit.md
-rg -q '^## Top Failures' docs/odin/skills/state-aware-skills-audit.md
-rg -q '^## Concrete Remediation Table' docs/odin/skills/state-aware-skills-audit.md
+grep -Eq '^# Odin Meta Prompt and Meta Skill Audit' docs/odin/skills/state-aware-skills-audit.md
+grep -Eq '^## Top Failures' docs/odin/skills/state-aware-skills-audit.md
+grep -Eq '^## Concrete Remediation Table' docs/odin/skills/state-aware-skills-audit.md
 echo "[skills-contract] PASS audit structure"
 
-rg -q '^## Terminology' docs/odin/skills/state-aware-skills-standard.md
-rg -q '^### Required `wake_up` State' docs/odin/skills/state-aware-skills-standard.md
-rg -q '^## Coordinates Snapshot' docs/odin/skills/state-aware-skills-standard.md
-rg -q '^## XML Skill DSL \(Minimal\)' docs/odin/skills/state-aware-skills-standard.md
+grep -Eq '^## Terminology' docs/odin/skills/state-aware-skills-standard.md
+grep -Eq '^### Required `wake_up` State' docs/odin/skills/state-aware-skills-standard.md
+grep -Eq '^## Coordinates Snapshot' docs/odin/skills/state-aware-skills-standard.md
+grep -Eq '^## XML Skill DSL \(Minimal\)' docs/odin/skills/state-aware-skills-standard.md
 echo "[skills-contract] PASS standard structure"
 
-rg -q '^## Top 10 Skills to Convert First' docs/odin/skills/state-aware-skills-migration-plan.md
-rg -q '^## CI Gates to Add' docs/odin/skills/state-aware-skills-migration-plan.md
+grep -Eq '^## Top 10 Skills to Convert First' docs/odin/skills/state-aware-skills-migration-plan.md
+grep -Eq '^## CI Gates to Add' docs/odin/skills/state-aware-skills-migration-plan.md
 echo "[skills-contract] PASS migration plan structure"
 
 python3 - <<'PY'
@@ -140,11 +140,11 @@ if errors:
 print("[skills-contract] PASS XML contract checks")
 PY
 
-rg -q '^```mermaid$' docs/odin/skills/examples/run-tests.mermaid.md
-rg -q '^stateDiagram-v2$' docs/odin/skills/examples/run-tests.mermaid.md
-rg -q '^flowchart TD$' docs/odin/skills/examples/run-tests.mermaid.md
-rg -q 'wake_up' docs/odin/skills/examples/run-tests.mermaid.md
-rg -q 'failure_execution_error' docs/odin/skills/examples/run-tests.mermaid.md
+grep -Eq '^```mermaid$' docs/odin/skills/examples/run-tests.mermaid.md
+grep -Eq '^stateDiagram-v2$' docs/odin/skills/examples/run-tests.mermaid.md
+grep -Eq '^flowchart TD$' docs/odin/skills/examples/run-tests.mermaid.md
+grep -Eq 'wake_up' docs/odin/skills/examples/run-tests.mermaid.md
+grep -Eq 'failure_execution_error' docs/odin/skills/examples/run-tests.mermaid.md
 echo "[skills-contract] PASS mermaid projections"
 
 echo "[skills-contract] COMPLETE"
