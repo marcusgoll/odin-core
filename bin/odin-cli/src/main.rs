@@ -121,6 +121,12 @@ fn run_skill_validate(path: &str) -> anyhow::Result<()> {
 
 fn run_skill_mermaid(path: &str) -> anyhow::Result<()> {
     let skill = load_skill(path)?;
+    let mut errors = Vec::new();
+    validate_skill(&skill, &mut errors);
+
+    if !errors.is_empty() {
+        return Err(anyhow!("validation failed:\n- {}", errors.join("\n- ")));
+    }
 
     println!("stateDiagram-v2");
     if let Some(wake_up_state) = &skill.wake_up_state {

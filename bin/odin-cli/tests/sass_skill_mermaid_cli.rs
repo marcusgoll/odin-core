@@ -68,14 +68,46 @@ fn skill_mermaid_emits_state_diagram_from_sass_skill_xml() {
         result.stdout,
         result.stderr
     );
+    let expected = [
+        "stateDiagram-v2",
+        "    %% wake_up: collect_context",
+        "    [*] --> collect_context",
+        "    collect_context --> run_test_suite",
+        "    run_test_suite --> report_success",
+        "    run_test_suite --> report_failure",
+        "    report_success --> done",
+        "    report_failure --> done",
+    ]
+    .join("\n");
+    assert_eq!(
+        result.stdout.trim_end_matches('\n'),
+        expected,
+        "unexpected mermaid output\nstdout:\n{}\nstderr:\n{}",
+        result.stdout,
+        result.stderr
+    );
+}
+
+#[test]
+fn skill_mermaid_fails_for_semantically_invalid_skill_xml() {
+    let path = fixture_path("broken-missing-target.skill.xml");
+    let path_str = path.to_str().expect("fixture path must be utf-8");
+
+    let result = run_cli(&["skill", "mermaid", path_str]);
     assert!(
-        result.stdout.contains("stateDiagram-v2"),
-        "expected mermaid diagram header in stdout\nstdout:\n{}",
-        result.stdout
+        !result.status.success(),
+        "expected mermaid generation to fail for invalid skill\nstdout:\n{}\nstderr:\n{}",
+        result.stdout,
+        result.stderr
     );
     assert!(
-        result.stdout.contains("wake_up"),
-        "expected wake_up marker in stdout\nstdout:\n{}",
-        result.stdout
+        result.stderr.contains("validation failed"),
+        "expected validation failure prefix in stderr\nstderr:\n{}",
+        result.stderr
+    );
+    assert!(
+        result.stderr.contains("transitions to unknown target"),
+        "expected unknown transition target validation error in stderr\nstderr:\n{}",
+        result.stderr
     );
 }
