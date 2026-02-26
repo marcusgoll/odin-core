@@ -46,6 +46,7 @@ Commands:
   export    Export legacy data into migration artifacts
   validate  Validate migration artifacts
   import    Import migration artifacts into odin-core
+  inventory Create migration inventory snapshot
 ";
 
 const MIGRATE_EXPORT_HELP: &str = "\
@@ -66,8 +67,55 @@ Usage: odin-cli migrate import
 Import migration artifacts into odin-core.
 ";
 
-fn handle_migrate_surface() -> anyhow::Result<bool> {
-    let args: Vec<String> = env::args().skip(1).collect();
+const MIGRATE_INVENTORY_HELP: &str = "\
+Usage: odin-cli migrate inventory --input <dir> --output <path>
+
+Create inventory snapshot from migration fixture data.
+";
+
+fn parse_inventory_flags(args: &[String]) -> anyhow::Result<(PathBuf, PathBuf)> {
+    let mut input_dir: Option<PathBuf> = None;
+    let mut output_path: Option<PathBuf> = None;
+
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--input" => {
+                let Some(value) = args.get(index + 1) else {
+                    anyhow::bail!("missing value for --input");
+                };
+                input_dir = Some(PathBuf::from(value));
+                index += 2;
+            }
+            "--output" => {
+                let Some(value) = args.get(index + 1) else {
+                    anyhow::bail!("missing value for --output");
+                };
+                output_path = Some(PathBuf::from(value));
+                index += 2;
+            }
+            other => anyhow::bail!("unknown migrate inventory argument: {other}"),
+        }
+    }
+
+    let input_dir = input_dir.ok_or_else(|| anyhow::anyhow!("missing required flag: --input"))?;
+    let output_path =
+        output_path.ok_or_else(|| anyhow::anyhow!("missing required flag: --output"))?;
+    Ok((input_dir, output_path))
+}
+
+fn reject_trailing_migrate_args(command: &str, args: &[String]) -> anyhow::Result<()> {
+    if args.is_empty() {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "unexpected argument(s) for migrate {command}: {}",
+        args.join(" ")
+    );
+}
+
+fn handle_migrate_args(args: &[String]) -> anyhow::Result<bool> {
     if args.first().map(String::as_str) != Some("migrate") {
         return Ok(false);
     }
@@ -77,38 +125,68 @@ fn handle_migrate_surface() -> anyhow::Result<bool> {
             println!("{MIGRATE_HELP}");
             Ok(true)
         }
-        Some("export") => match args.get(2).map(String::as_str) {
-            Some("--help") | Some("-h") => {
+        Some("export") => {
+            let sub_args = &args[2..];
+            if matches!(sub_args.first().map(String::as_str), Some("--help") | Some("-h")) {
+                if sub_args.len() != 1 {
+                    reject_trailing_migrate_args("export", &sub_args[1..])?;
+                }
                 println!("{MIGRATE_EXPORT_HELP}");
-                Ok(true)
-            }
-            None | Some(_) => {
+            } else {
+                reject_trailing_migrate_args("export", sub_args)?;
                 run_migration_command(MigrationCommand::Export)?;
-                Ok(true)
             }
-        },
-        Some("validate") => match args.get(2).map(String::as_str) {
-            Some("--help") | Some("-h") => {
+            Ok(true)
+        }
+        Some("validate") => {
+            let sub_args = &args[2..];
+            if matches!(sub_args.first().map(String::as_str), Some("--help") | Some("-h")) {
+                if sub_args.len() != 1 {
+                    reject_trailing_migrate_args("validate", &sub_args[1..])?;
+                }
                 println!("{MIGRATE_VALIDATE_HELP}");
-                Ok(true)
-            }
-            None | Some(_) => {
+            } else {
+                reject_trailing_migrate_args("validate", sub_args)?;
                 run_migration_command(MigrationCommand::Validate)?;
-                Ok(true)
             }
-        },
-        Some("import") => match args.get(2).map(String::as_str) {
-            Some("--help") | Some("-h") => {
+            Ok(true)
+        }
+        Some("import") => {
+            let sub_args = &args[2..];
+            if matches!(sub_args.first().map(String::as_str), Some("--help") | Some("-h")) {
+                if sub_args.len() != 1 {
+                    reject_trailing_migrate_args("import", &sub_args[1..])?;
+                }
                 println!("{MIGRATE_IMPORT_HELP}");
-                Ok(true)
-            }
-            None | Some(_) => {
+            } else {
+                reject_trailing_migrate_args("import", sub_args)?;
                 run_migration_command(MigrationCommand::Import)?;
-                Ok(true)
             }
-        },
+            Ok(true)
+        }
+        Some("inventory") => {
+            let sub_args = &args[2..];
+            if matches!(sub_args.first().map(String::as_str), Some("--help") | Some("-h")) {
+                if sub_args.len() != 1 {
+                    reject_trailing_migrate_args("inventory", &sub_args[1..])?;
+                }
+                println!("{MIGRATE_INVENTORY_HELP}");
+            } else {
+                let (input_dir, output_path) = parse_inventory_flags(&args[2..])?;
+                run_migration_command(MigrationCommand::Inventory {
+                    input_dir,
+                    output_path,
+                })?;
+            }
+            Ok(true)
+        }
         Some(other) => anyhow::bail!("unknown migrate subcommand: {other}"),
     }
+}
+
+fn handle_migrate_surface() -> anyhow::Result<bool> {
+    let args: Vec<String> = env::args().skip(1).collect();
+    handle_migrate_args(&args)
 }
 
 fn parse_cli_config() -> CliConfig {
@@ -259,5 +337,59 @@ fn main() -> anyhow::Result<()> {
 
     loop {
         thread::sleep(Duration::from_secs(60));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle_migrate_args;
+
+    fn args(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|part| part.to_string()).collect()
+    }
+
+    #[test]
+    fn migrate_export_validate_import_reject_unexpected_trailing_args() {
+        for command in ["export", "validate", "import"] {
+            let result = handle_migrate_args(&args(&["migrate", command, "extra"]));
+            let err = result.expect_err("trailing args should fail");
+            assert!(
+                err.to_string()
+                    .contains(&format!("unexpected argument(s) for migrate {command}: extra")),
+                "unexpected error for command {command}: {err:#}"
+            );
+        }
+    }
+
+    #[test]
+    fn migrate_inventory_rejects_missing_required_flags() {
+        let result = handle_migrate_args(&args(&["migrate", "inventory", "--input", "/tmp/in"]));
+        let err = result.expect_err("missing --output should fail");
+        assert!(
+            err.to_string().contains("missing required flag: --output"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn migrate_inventory_rejects_invalid_flag() {
+        let result = handle_migrate_args(&args(&["migrate", "inventory", "--bogus", "value"]));
+        let err = result.expect_err("unknown flags should fail");
+        assert!(
+            err.to_string()
+                .contains("unknown migrate inventory argument: --bogus"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn migrate_inventory_help_rejects_trailing_args() {
+        let result = handle_migrate_args(&args(&["migrate", "inventory", "--help", "extra"]));
+        let err = result.expect_err("help with trailing args should fail");
+        assert!(
+            err.to_string()
+                .contains("unexpected argument(s) for migrate inventory: extra"),
+            "unexpected error: {err:#}"
+        );
     }
 }
