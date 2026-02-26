@@ -259,7 +259,7 @@ fn normalize_domain_probe_input(value: &str) -> String {
     }
 }
 
-fn governance_subcommand_args<'a>(argv: &'a [String]) -> Option<&'a [String]> {
+fn governance_subcommand_args(argv: &[String]) -> Option<&[String]> {
     let mut index = 1;
     while index < argv.len() {
         match argv[index].as_str() {

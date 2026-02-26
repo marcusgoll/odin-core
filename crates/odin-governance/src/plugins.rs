@@ -317,10 +317,7 @@ fn extract_host(url: &str) -> Option<String> {
     let without_scheme = trimmed
         .strip_prefix("https://")
         .or_else(|| trimmed.strip_prefix("http://"))?;
-    let authority = without_scheme
-        .split(['/', '?', '#'])
-        .next()?
-        .trim();
+    let authority = without_scheme.split(['/', '?', '#']).next()?.trim();
     let host_port = authority.rsplit('@').next()?;
     let host = host_port.split(':').next()?.trim().to_ascii_lowercase();
     if host.is_empty() {
@@ -654,7 +651,9 @@ mod tests {
     #[test]
     fn policy_wildcard_allows_subdomain() {
         let policy = stagehand_with_domains(["*.example.com"]);
-        let decision = policy.evaluate(Action::ObserveUrl("https://www.example.com/path".to_string()));
+        let decision = policy.evaluate(Action::ObserveUrl(
+            "https://www.example.com/path".to_string(),
+        ));
         assert_eq!(
             decision,
             PermissionDecision::Allow {

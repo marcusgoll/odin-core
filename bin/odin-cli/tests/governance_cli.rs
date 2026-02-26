@@ -403,9 +403,15 @@ fn governance_enable_plugin_stagehand_blocks_when_command_scope_denies() {
         .iter()
         .filter(|check| check["name"] == "command_allowlist")
         .collect::<Vec<_>>();
-    assert_eq!(command_checks.len(), 2, "expected one check per command value");
+    assert_eq!(
+        command_checks.len(),
+        2,
+        "expected one check per command value"
+    );
     assert!(
-        command_checks.iter().any(|check| check["decision"] == "deny"),
+        command_checks
+            .iter()
+            .any(|check| check["decision"] == "deny"),
         "expected a denied command check"
     );
 }

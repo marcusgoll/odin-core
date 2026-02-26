@@ -1,6 +1,6 @@
 use odin_governance::plugins::{
-    Action, PermissionDecision, stagehand_default_policy, stagehand_policy_from_envelope,
-    stagehand_with_domains,
+    stagehand_default_policy, stagehand_policy_from_envelope, stagehand_with_domains, Action,
+    PermissionDecision,
 };
 use odin_plugin_protocol::{DelegationCapability, PluginPermissionEnvelope, TrustLevel};
 use std::fs;
@@ -35,7 +35,9 @@ fn stagehand_denies_domain_outside_allowlist() {
 #[test]
 fn stagehand_exact_domain_does_not_allow_subdomain() {
     let policy = stagehand_with_domains(["example.com"]);
-    let decision = policy.evaluate(Action::ObserveUrl("https://sub.example.com/path".to_string()));
+    let decision = policy.evaluate(Action::ObserveUrl(
+        "https://sub.example.com/path".to_string(),
+    ));
 
     assert_eq!(
         decision,
@@ -48,7 +50,9 @@ fn stagehand_exact_domain_does_not_allow_subdomain() {
 #[test]
 fn stagehand_wildcard_domain_allows_subdomain() {
     let policy = stagehand_with_domains(["*.example.com"]);
-    let decision = policy.evaluate(Action::ObserveUrl("https://sub.example.com/path".to_string()));
+    let decision = policy.evaluate(Action::ObserveUrl(
+        "https://sub.example.com/path".to_string(),
+    ));
 
     assert_eq!(
         decision,
@@ -74,7 +78,9 @@ fn stagehand_wildcard_domain_does_not_allow_apex() {
 #[test]
 fn stagehand_wildcard_with_scheme_allows_subdomain() {
     let policy = stagehand_with_domains(["https://*.example.com"]);
-    let decision = policy.evaluate(Action::ObserveUrl("https://sub.example.com/path".to_string()));
+    let decision = policy.evaluate(Action::ObserveUrl(
+        "https://sub.example.com/path".to_string(),
+    ));
 
     assert_eq!(
         decision,
@@ -332,9 +338,10 @@ fn stagehand_allows_absolute_option_path_within_workspace() {
         .with_commands(["cat"])
         .with_workspaces([workspace.to_string_lossy().to_string()]);
 
-    let decision = policy.evaluate(Action::RunCommand(
-        format!("cat --input={}", file.to_string_lossy()),
-    ));
+    let decision = policy.evaluate(Action::RunCommand(format!(
+        "cat --input={}",
+        file.to_string_lossy()
+    )));
 
     assert_eq!(
         decision,
@@ -416,7 +423,10 @@ fn stagehand_allows_absolute_positional_path_within_workspace() {
         .with_commands(["cat"])
         .with_workspaces([workspace.to_string_lossy().to_string()]);
 
-    let decision = policy.evaluate(Action::RunCommand(format!("cat {}", file.to_string_lossy())));
+    let decision = policy.evaluate(Action::RunCommand(format!(
+        "cat {}",
+        file.to_string_lossy()
+    )));
 
     assert_eq!(
         decision,

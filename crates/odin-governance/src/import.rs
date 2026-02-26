@@ -1,7 +1,7 @@
 use odin_plugin_protocol::{SkillRecord, TrustLevel};
 use thiserror::Error;
 
-use crate::risk_scan::{RiskCategory, RiskFinding, scan_skill_content};
+use crate::risk_scan::{scan_skill_content, RiskCategory, RiskFinding};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Ack {
@@ -35,7 +35,10 @@ pub enum ImportGateError {
     EmptyName,
 }
 
-pub fn evaluate_install(candidate: &SkillImportCandidate, ack: Ack) -> Result<InstallPlan, ImportGateError> {
+pub fn evaluate_install(
+    candidate: &SkillImportCandidate,
+    ack: Ack,
+) -> Result<InstallPlan, ImportGateError> {
     if candidate.record.name.trim().is_empty() {
         return Err(ImportGateError::EmptyName);
     }

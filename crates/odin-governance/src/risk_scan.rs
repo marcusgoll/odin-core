@@ -53,7 +53,12 @@ pub fn scan_skill_content(scripts: &[String], readme: Option<&str>) -> Vec<RiskF
 fn scan_text(text: &str, findings: &mut Vec<RiskFinding>) {
     let normalized = text.to_ascii_lowercase();
     collect_matches(&normalized, SHELL_PATTERNS, RiskCategory::Shell, findings);
-    collect_matches(&normalized, NETWORK_PATTERNS, RiskCategory::Network, findings);
+    collect_matches(
+        &normalized,
+        NETWORK_PATTERNS,
+        RiskCategory::Network,
+        findings,
+    );
     collect_matches(&normalized, SECRET_PATTERNS, RiskCategory::Secret, findings);
     collect_matches(&normalized, DELETE_PATTERNS, RiskCategory::Delete, findings);
 }
@@ -80,7 +85,7 @@ fn collect_matches(
 
 #[cfg(test)]
 mod tests {
-    use super::{RiskCategory, scan_skill_content};
+    use super::{scan_skill_content, RiskCategory};
 
     #[test]
     fn scanner_detects_shell_findings() {
@@ -127,7 +132,8 @@ mod tests {
     #[test]
     fn scanner_deduplicates_identical_findings_per_source() {
         let scripts = vec![
-            "#!/usr/bin/env bash\nwget https://example.com/a\nwget https://example.com/b".to_string(),
+            "#!/usr/bin/env bash\nwget https://example.com/a\nwget https://example.com/b"
+                .to_string(),
         ];
 
         let findings = scan_skill_content(&scripts, None);

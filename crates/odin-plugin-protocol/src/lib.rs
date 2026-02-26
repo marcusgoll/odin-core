@@ -378,7 +378,9 @@ mod tests {
         let schema = load_schema("skill-registry.v1.schema.json");
 
         let root_required = schema["required"].as_array().expect("root required");
-        assert!(!root_required.iter().any(|item| item.as_str() == Some("skills")));
+        assert!(!root_required
+            .iter()
+            .any(|item| item.as_str() == Some("skills")));
         assert_eq!(schema["properties"]["skills"]["default"], json!([]));
 
         let skill_record_required = schema["$defs"]["skill_record"]["required"]
