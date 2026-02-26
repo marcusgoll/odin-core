@@ -120,6 +120,7 @@ dependencies = [
  "odin-audit",
  "odin-compat-bash",
  "odin-core-runtime",
+ "odin-migration",
  "odin-plugin-protocol",
  "odin-policy-engine",
  "serde_json",
@@ -149,6 +150,13 @@ dependencies = [
  "serde_yaml",
  "thiserror",
  "tracing",
+]
+
+[[package]]
+name = "odin-migration"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
 ]
 
 [[package]]

@@ -12,6 +12,7 @@ use odin_compat_bash::{
 use odin_core_runtime::{
     BackendState, DryRunExecutor, ExternalProcessPluginRunner, OrchestratorRuntime, TaskIngress,
 };
+use odin_migration::{run as run_migration_command, MigrationCommand};
 use odin_plugin_protocol::{ActionRequest, CapabilityRequest, RiskTier};
 use odin_policy_engine::StaticPolicyEngine;
 
@@ -35,6 +36,78 @@ impl Default for CliConfig {
             task_file: None,
             run_once: false,
         }
+    }
+}
+
+const MIGRATE_HELP: &str = "\
+Usage: odin-cli migrate <COMMAND>
+
+Commands:
+  export    Export legacy data into migration artifacts
+  validate  Validate migration artifacts
+  import    Import migration artifacts into odin-core
+";
+
+const MIGRATE_EXPORT_HELP: &str = "\
+Usage: odin-cli migrate export
+
+Export legacy data into migration artifacts.
+";
+
+const MIGRATE_VALIDATE_HELP: &str = "\
+Usage: odin-cli migrate validate
+
+Validate migration artifacts.
+";
+
+const MIGRATE_IMPORT_HELP: &str = "\
+Usage: odin-cli migrate import
+
+Import migration artifacts into odin-core.
+";
+
+fn handle_migrate_surface() -> anyhow::Result<bool> {
+    let args: Vec<String> = env::args().skip(1).collect();
+    if args.first().map(String::as_str) != Some("migrate") {
+        return Ok(false);
+    }
+
+    match args.get(1).map(String::as_str) {
+        None | Some("--help") | Some("-h") => {
+            println!("{MIGRATE_HELP}");
+            Ok(true)
+        }
+        Some("export") => match args.get(2).map(String::as_str) {
+            Some("--help") | Some("-h") => {
+                println!("{MIGRATE_EXPORT_HELP}");
+                Ok(true)
+            }
+            None | Some(_) => {
+                run_migration_command(MigrationCommand::Export)?;
+                Ok(true)
+            }
+        },
+        Some("validate") => match args.get(2).map(String::as_str) {
+            Some("--help") | Some("-h") => {
+                println!("{MIGRATE_VALIDATE_HELP}");
+                Ok(true)
+            }
+            None | Some(_) => {
+                run_migration_command(MigrationCommand::Validate)?;
+                Ok(true)
+            }
+        },
+        Some("import") => match args.get(2).map(String::as_str) {
+            Some("--help") | Some("-h") => {
+                println!("{MIGRATE_IMPORT_HELP}");
+                Ok(true)
+            }
+            None | Some(_) => {
+                run_migration_command(MigrationCommand::Import)?;
+                Ok(true)
+            }
+        },
+        Some(other) => anyhow::bail!("unknown migrate subcommand: {other}"),
     }
 }
 
@@ -105,6 +178,10 @@ impl TaskIngress for StdoutTaskIngress {
 }
 
 fn main() -> anyhow::Result<()> {
+    if handle_migrate_surface()? {
+        return Ok(());
+    }
+
     let cfg = parse_cli_config();
     println!("odin-cli starting with config: {}", cfg.config_path);
     println!("plugins root: {}", cfg.plugins_root.display());
