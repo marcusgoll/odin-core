@@ -64,7 +64,14 @@ Use `--legacy-root /path/to/cfipros` to enqueue follow-up tasks via legacy inbox
 bash scripts/verify/compat-regression.sh --legacy-root /home/orchestrator/cfipros
 bash scripts/verify/quickstart-smoke.sh
 bash scripts/verify/plugin-install-matrix.sh
+bash scripts/verify/skill-plugin-governance-smoke.sh
 ```
+
+## Governance docs
+
+- `docs/skill-system.md`
+- `docs/stagehand-safety.md`
+- `docs/plugin-system.md`
 
 ## Scope
 

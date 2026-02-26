@@ -35,3 +35,23 @@ When `InstallRequest.require_signature=true` or manifest `signing.required=true`
 - Plugins run out-of-process
 - Requests are capability-token scoped per action
 - No direct secrets, only handle references
+
+## Governance overlays
+
+- Skill installs and plugin enablement are governed by scoped registries and trust levels (`global`, `project`, `user`).
+- Untrusted/script-bearing skill installs are blocked until explicit acknowledgement is supplied.
+- Stagehand plugin enablement is blocked without explicit domain and workspace allowlists.
+
+See:
+
+- `docs/skill-system.md` for trust and install gating workflows
+- `docs/stagehand-safety.md` for Stagehand-specific safety defaults
+
+## Delegation capability manifests
+
+- Delegated runtime actions must include a capability manifest (`schemas/capability-manifest.v1.schema.json`).
+- Runtime fails closed when a requested capability/scope is not granted by manifest.
+- Manifest validation and usage decisions are auditable via governance events:
+  - `governance.manifest.denied`
+  - `governance.manifest.validated`
+  - `governance.capability.used`
