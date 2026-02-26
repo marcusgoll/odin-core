@@ -107,16 +107,9 @@ struct ParsedSkill {
 }
 
 fn run_skill_validate(path: &str) -> anyhow::Result<()> {
-    let xml = fs::read_to_string(path).with_context(|| format!("failed to read {path}"))?;
-    let document = roxmltree::Document::parse(&xml)
-        .with_context(|| format!("failed to parse XML in {path}"))?;
-
+    let skill = load_skill(path)?;
     let mut errors = Vec::new();
-    let parsed = parse_skill(&document, &mut errors);
-
-    if let Some(skill) = parsed {
-        validate_skill(&skill, &mut errors);
-    }
+    validate_skill(&skill, &mut errors);
 
     if !errors.is_empty() {
         return Err(anyhow!("validation failed:\n- {}", errors.join("\n- ")));
@@ -124,6 +117,41 @@ fn run_skill_validate(path: &str) -> anyhow::Result<()> {
 
     println!("validation ok");
     Ok(())
+}
+
+fn run_skill_mermaid(path: &str) -> anyhow::Result<()> {
+    let skill = load_skill(path)?;
+
+    println!("stateDiagram-v2");
+    if let Some(wake_up_state) = &skill.wake_up_state {
+        println!("    %% wake_up: {wake_up_state}");
+        println!("    [*] --> {wake_up_state}");
+    }
+
+    for state in &skill.states {
+        for transition in &state.transitions {
+            if let Some(target) = &transition.target {
+                println!("    {} --> {}", state.id, target);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn load_skill(path: &str) -> anyhow::Result<ParsedSkill> {
+    let xml = fs::read_to_string(path).with_context(|| format!("failed to read {path}"))?;
+    let document = roxmltree::Document::parse(&xml)
+        .with_context(|| format!("failed to parse XML in {path}"))?;
+
+    let mut errors = Vec::new();
+    let parsed = parse_skill(&document, &mut errors);
+
+    if !errors.is_empty() {
+        return Err(anyhow!("validation failed:\n- {}", errors.join("\n- ")));
+    }
+
+    parsed.ok_or_else(|| anyhow!("validation failed:\n- unknown parse error"))
 }
 
 fn parse_skill(
@@ -311,18 +339,19 @@ fn maybe_run_skill_command(args: &[String]) -> Option<anyhow::Result<()>> {
         return None;
     }
 
-    if args.get(1).map(String::as_str) != Some("validate") {
-        return Some(Err(anyhow!(
-            "unsupported skill command, expected: odin-cli skill validate <path>"
-        )));
-    }
-
     if args.len() != 3 {
-        return Some(Err(anyhow!("usage: odin-cli skill validate <path>")));
+        return Some(Err(anyhow!("usage: odin-cli skill <validate|mermaid> <path>")));
     }
 
+    let command = args[1].as_str();
     let path = &args[2];
-    Some(run_skill_validate(path))
+    match command {
+        "validate" => Some(run_skill_validate(path)),
+        "mermaid" => Some(run_skill_mermaid(path)),
+        _ => Some(Err(anyhow!(
+            "unsupported skill command, expected: odin-cli skill <validate|mermaid> <path>"
+        ))),
+    }
 }
 
 fn sample_action_request() -> ActionRequest {
