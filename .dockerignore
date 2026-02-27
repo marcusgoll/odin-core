@@ -1,0 +1,13 @@
+target/
+.git/
+state/
+logs/
+*.md
+.env
+.env.example
+.DS_Store
+__pycache__/
+*.pyc
+.worktrees/
+docs/
+.github/
