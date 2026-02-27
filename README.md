@@ -2,6 +2,15 @@
 
 Vendor-agnostic, policy-driven orchestrator core with plugin-first extensibility.
 
+Odin is a self-hosted orchestration engine that routes tasks through a policy engine, executes them via plugins, and logs every decision for audit. It replaces ad-hoc shell scripts with a structured runtime that enforces capability-based security, supports both native Rust plugins and legacy Bash compatibility, and exposes a TUI dashboard for monitoring.
+
+## Prerequisites
+
+- **Rust** stable toolchain (1.75+) via [rustup](https://rustup.rs)
+- **Docker** and Docker Compose (for containerized deployment)
+- **Python 3.10+** with `rich` (`pip install rich`) for the TUI dashboard
+- **jq** (used by verification scripts)
+
 ## Quickstart (recommended)
 
 ```bash
@@ -9,11 +18,15 @@ cp .env.example .env
 docker compose up -d
 ```
 
+For a CLI-only walkthrough without Docker, see `docs/quickstart.md`.
+
 ## Local dev
 
 ```bash
-cargo run -p odin-cli -- --config config/default.yaml
+cargo run -p odin-cli -- --config config/default.yaml --run-once
 ```
+
+Omit `--run-once` to keep the runtime running (enters a 60-second poll loop).
 
 ## Bootstrap wrapper contract (minimal)
 
@@ -89,9 +102,16 @@ Use `--legacy-root /path/to/cfipros` to enqueue follow-up tasks via legacy inbox
 ## Verification Gates
 
 ```bash
-bash scripts/verify/compat-regression.sh --legacy-root /home/orchestrator/cfipros
 bash scripts/verify/quickstart-smoke.sh
 bash scripts/verify/plugin-install-matrix.sh
+bash scripts/verify/workflow-contract.sh
+bash scripts/verify/tui-core-smoke.sh
+bash scripts/verify/bootstrap-wrapper-smoke.sh
+bash scripts/verify/guardrails-gate-smoke.sh
+bash scripts/verify/mode-confidence-smoke.sh
+bash scripts/verify/skills-contract.sh
+bash scripts/verify/docs-command-smoke.sh
+bash scripts/verify/compat-regression.sh --legacy-root /path/to/legacy-repo
 ```
 
 ## Scope
