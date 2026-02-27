@@ -85,6 +85,23 @@ scripts/odin/odin connect codex oauth
 
 Use `--dry-run` to preview without making changes.
 
+## Bootstrap CLI (dry-run walkthrough)
+
+Explore the full command surface safely with `--dry-run`:
+
+```bash
+scripts/odin/odin help
+scripts/odin/odin connect claude oauth --dry-run
+scripts/odin/odin start --dry-run
+scripts/odin/odin tui --dry-run
+scripts/odin/odin inbox add "bootstrap task" --dry-run
+scripts/odin/odin inbox list
+scripts/odin/odin gateway add cli --dry-run
+scripts/odin/odin verify --dry-run
+```
+
+Conservative default: if `config/guardrails.yaml` is missing, mutating commands are blocked unless `--dry-run` is used.
+
 ## Verification
 
 Run the quickstart smoke test to confirm everything works:
