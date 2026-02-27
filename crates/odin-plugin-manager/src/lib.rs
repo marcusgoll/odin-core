@@ -501,15 +501,6 @@ mod tests {
         ))
     }
 
-    fn command_available(name: &str) -> bool {
-        Command::new("sh")
-            .arg("-lc")
-            .arg(format!("command -v {} >/dev/null 2>&1", name))
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-    }
-
     fn run_command_checked(cmd: &mut Command, label: &str) {
         let output = cmd
             .output()
