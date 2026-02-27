@@ -13,12 +13,19 @@ Odin is a self-hosted orchestration engine that routes tasks through a policy en
 
 ## Quickstart (recommended)
 
+The fastest way to get started — automated setup with LLM connection:
+
 ```bash
-cp .env.example .env
-docker compose up -d
+./setup.sh
 ```
 
-For a CLI-only walkthrough without Docker, see `docs/quickstart.md`.
+Or headless for LLM agents:
+
+```bash
+./setup.sh --llm claude --auth oauth --skip-tests
+```
+
+For manual setup paths (Docker or Cargo), see `docs/quickstart.md`.
 
 ## Local dev
 

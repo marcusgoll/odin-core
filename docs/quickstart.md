@@ -1,69 +1,110 @@
-# Bootstrap quickstart (CLI-only)
+# Getting Started
 
-This path is complete with only the CLI adapter. Slack and Telegram are optional adapters that can be added later.
+This guide covers three ways to set up odin-core:
+1. **Automated** — `./setup.sh` (recommended for most users)
+2. **Docker** — container-based, no Rust toolchain needed
+3. **Cargo** — build from source for development
 
-## Prerequisites
+## Automated Setup (recommended)
 
-- Run commands from the repository root.
-- Bash and `grep` are installed.
-- No Slack or Telegram credentials are required for this flow.
+The setup script checks prerequisites, builds, tests, and connects your LLM in one command.
 
-## Minimal config (safe dry-run)
+### Interactive
 
 ```bash
-export ODIN_GUARDRAILS_PATH=/tmp/odin-missing-guardrails.yaml
-export ODIN_MODE_STATE_PATH=/tmp/odin-bootstrap-state.json
+./setup.sh
 ```
 
-The missing guardrails path is intentional here: it keeps risky commands no-op unless `--dry-run` is present.
-
-## Run the bootstrap command surface
+### Headless (LLM-friendly)
 
 ```bash
-scripts/odin/odin help
-scripts/odin/odin connect claude oauth --dry-run
-scripts/odin/odin start --dry-run
-scripts/odin/odin tui --dry-run
-scripts/odin/odin inbox add "bootstrap task" --dry-run
-scripts/odin/odin inbox list
-scripts/odin/odin gateway add cli --dry-run
-scripts/odin/odin verify --dry-run
+./setup.sh --llm claude --auth oauth --skip-tests
 ```
 
-## Verification checks
+All flags:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--llm <name>` | (interactive prompt) | LLM provider: `claude`, `codex` |
+| `--auth <method>` | `oauth` | Auth method: `oauth`, `api` |
+| `--api-key <key>` | — | API key (only with `--auth api`) |
+| `--docker-only` | — | Skip cargo build |
+| `--cargo-only` | — | Skip docker build |
+| `--skip-tests` | — | Skip test suite |
+
+## Docker Path
+
+### Prerequisites
+
+- Docker and Docker Compose
+
+### Steps
 
 ```bash
-scripts/odin/odin connect claude oauth --dry-run | grep -F "DRY-RUN connect provider=claude auth=oauth"
-scripts/odin/odin gateway add cli --dry-run | grep -F "DRY-RUN gateway add source=cli"
-scripts/odin/odin verify --dry-run | grep -F "DRY-RUN verify"
+cp .env.example .env
+docker compose up -d
+```
+
+Verify the container is running:
+
+```bash
+docker compose ps
+```
+
+## Cargo Path
+
+### Prerequisites
+
+- Rust stable toolchain (1.75+) via [rustup](https://rustup.rs)
+- Python 3.10+ with `rich` (`pip install rich`) for the TUI
+- jq
+
+### Steps
+
+```bash
+cp .env.example .env
+cargo build --workspace
+cargo test --workspace
+cargo run -p odin-cli -- --config config/default.yaml --run-once
+```
+
+## Connecting an LLM
+
+After building, connect your LLM CLI:
+
+```bash
+# Claude Code (OAuth — default)
+scripts/odin/odin connect claude oauth
+
+# Claude Code (API key)
+scripts/odin/odin connect claude api
+
+# Codex (OAuth)
+scripts/odin/odin connect codex oauth
+```
+
+Use `--dry-run` to preview without making changes.
+
+## Verification
+
+Run the quickstart smoke test to confirm everything works:
+
+```bash
+bash scripts/verify/quickstart-smoke.sh
+```
+
+Full verification suite:
+
+```bash
+bash scripts/verify/quickstart-smoke.sh
+bash scripts/verify/plugin-install-matrix.sh
+bash scripts/verify/tui-core-smoke.sh
+bash scripts/verify/bootstrap-wrapper-smoke.sh
 bash scripts/verify/docs-command-smoke.sh
 ```
 
-## Common failure + smallest fix
+## Next Steps
 
-```bash
-scripts/odin/odin start
-# [odin] ERROR: BLOCKED start: guardrails file not found ...
-
-scripts/odin/odin start --dry-run
-```
-
-## Optional: run non-dry integration/mutating commands locally
-
-```bash
-cat > /tmp/odin-guardrails-local.yaml <<'YAML'
-denylist: []
-confirm_required:
-  - integration
-YAML
-
-export ODIN_GUARDRAILS_PATH=/tmp/odin-guardrails-local.yaml
-export ODIN_GUARDRAILS_ACK=yes
-export ODIN_MODE_STATE_PATH=/tmp/odin-bootstrap-state-live.json
-
-scripts/odin/odin connect claude oauth --confirm
-scripts/odin/odin start
-scripts/odin/odin tui
-scripts/odin/odin inbox add "bootstrap task"
-scripts/odin/odin verify
-```
+- **TUI dashboard:** `python3 scripts/odin/odin-tui.py --live`
+- **Bootstrap CLI:** `scripts/odin/odin help`
+- **Integrations:** See `docs/integrations/` for Slack, Telegram, and n8n adapters
