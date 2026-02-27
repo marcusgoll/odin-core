@@ -373,7 +373,7 @@ impl PluginManager for FilesystemPluginManager {
         let raw = fs::read_to_string(&manifest_path)
             .map_err(|e| PluginManagerError::ManifestParse(e.to_string()))?;
 
-        serde_yaml::from_str::<PluginManifest>(&raw)
+        serde_yml::from_str::<PluginManifest>(&raw)
             .map_err(|e| PluginManagerError::ManifestParse(e.to_string()))
     }
 }
@@ -476,9 +476,9 @@ mod tests {
             "schema_version: 1\nplugin:\n  name: example.safe-github\n  version: 0.1.0\n  runtime: external-process\n  compatibility:\n    core_version: \">=0.1.0 <0.2.0\"\n  entrypoint:\n    command: ./bin/plugin\n  capabilities:\n    - id: repo.read\n      scope: [project]\ndistribution:\n  source:\n    type: local-path\n    ref: .\n  integrity:\n    checksum_sha256: \"{}\"\nsigning:\n  required: {}\n  method: {}\n  signature: {}\n  certificate: {}\n",
             checksum,
             if required { "true" } else { "false" },
-            serde_yaml::to_string(method).expect("method yaml").trim(),
-            serde_yaml::to_string(signature).expect("signature yaml").trim(),
-            serde_yaml::to_string(certificate)
+            serde_yml::to_string(method).expect("method yaml").trim(),
+            serde_yml::to_string(signature).expect("signature yaml").trim(),
+            serde_yml::to_string(certificate)
                 .expect("certificate yaml")
                 .trim(),
         );
@@ -628,12 +628,8 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // requires minisign CLI tool
     fn local_install_accepts_valid_minisign_signature_when_required() {
-        if !command_available("minisign") {
-            eprintln!("skipping minisign test; tool not installed");
-            return;
-        }
-
         let root = temp_dir("local-minisign-ok");
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("mkdir");
@@ -686,12 +682,8 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // requires cosign CLI tool
     fn local_install_accepts_valid_sigstore_signature_when_required() {
-        if !command_available("cosign") {
-            eprintln!("skipping cosign test; tool not installed");
-            return;
-        }
-
         let root = temp_dir("local-sigstore-ok");
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("mkdir");

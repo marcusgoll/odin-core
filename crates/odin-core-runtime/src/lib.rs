@@ -180,7 +180,7 @@ impl ExternalProcessPluginRunner {
                 manifest_path.display()
             ))
         })?;
-        serde_yaml::from_str::<PluginManifest>(&raw)
+        serde_yml::from_str::<PluginManifest>(&raw)
             .map_err(|e| RuntimeError::Plugin(format!("manifest parse failed: {e}")))
     }
 }
