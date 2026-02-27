@@ -1,0 +1,21 @@
+schema_version: 1
+workspace_roots:
+  - /home/orchestrator/odin-core
+command_policy:
+  allow:
+    - git status
+    - git diff
+    - cargo test --workspace
+  deny:
+    - rm -rf *
+    - git checkout --
+    - sed -i *
+confirm_required:
+  - destructive_write
+  - credential_entry
+  - external_purchase
+plugins:
+  stagehand:
+    enabled: false
+    allowed_domains: []
+    allowed_workspaces: []
