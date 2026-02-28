@@ -45,6 +45,9 @@ describe.skipIf(!hasCredentials)(
         provider: "openai",
         model: "gpt-4o",
       });
+      // NOTE: Credentials are interpolated into the instruction string because
+      // Stagehand v2's agent.execute() API does not support a variables parameter.
+      // Only use dedicated test accounts with limited privileges for these tests.
       const result = await agent.execute({
         instruction: `Go to https://app.cfipros.com/login, enter the email ${testEmail} and password ${testPassword}, then click the login/sign in button. Wait for the dashboard to load.`,
         maxSteps: 15,

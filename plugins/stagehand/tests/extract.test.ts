@@ -41,7 +41,6 @@ describe("Phase 2: Data Extraction — cfipros.com", () => {
     expect(result.heading).toBeTruthy();
     expect(typeof result.heading).toBe("string");
     expect(result.heading.length).toBeGreaterThan(3);
-    console.log("Extracted hero heading:", result.heading);
   }, 45_000);
 
   it("should extract navigation links", async () => {
@@ -52,7 +51,6 @@ describe("Phase 2: Data Extraction — cfipros.com", () => {
       }),
     });
     expect(result.links.length).toBeGreaterThan(0);
-    console.log("Extracted navigation links:", result.links);
   }, 45_000);
 
   it("should extract feature descriptions from the homepage", async () => {
@@ -73,9 +71,5 @@ describe("Phase 2: Data Extraction — cfipros.com", () => {
       expect(feature.title).toBeTruthy();
       expect(feature.description).toBeTruthy();
     }
-    console.log(
-      "Extracted features:",
-      JSON.stringify(result.features, null, 2),
-    );
   }, 60_000);
 });

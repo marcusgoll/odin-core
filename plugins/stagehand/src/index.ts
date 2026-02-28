@@ -72,11 +72,17 @@ async function executeCapability(
   const stagehand = await getStagehand(config);
 
   const url = input.url as string | undefined;
-  if (url) {
+  if (url && capabilityId !== "browser.navigate") {
     const currentUrl = stagehand.page.url();
     if (currentUrl !== url && !currentUrl.startsWith(url)) {
       await stagehand.page.goto(url, { waitUntil: "domcontentloaded" });
     }
+  }
+
+  // Verify current page is on an allowed domain
+  const currentPageUrl = stagehand.page.url();
+  if (currentPageUrl && currentPageUrl !== "about:blank" && !isDomainAllowed(currentPageUrl, config)) {
+    return { status: "failed", detail: `Current page domain not in allowlist: ${currentPageUrl}`, output: null };
   }
 
   switch (capabilityId) {
@@ -91,7 +97,7 @@ async function executeCapability(
         instruction: input.instruction as string,
         variables: input.variables as Record<string, string> | undefined,
       });
-      return { status: "executed", detail: result.message, output: result };
+      return { status: result.success ? "executed" : "failed", detail: result.message, output: result };
     }
     case "browser.extract": {
       const result = await handleExtract(stagehand, {
@@ -152,7 +158,17 @@ async function handleEvent(event: EventEnvelope): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[stagehand] Error handling event: ${msg}\n`);
-    emitNoop();
+    if (event.event_type === "action.approved") {
+      emit({
+        action: "enqueue_task",
+        task_type: "stagehand.result",
+        project: event.project,
+        reason: `Error: ${msg}`,
+        payload: { status: "failed", detail: msg, output: null },
+      });
+    } else {
+      emitNoop();
+    }
   }
 }
 
