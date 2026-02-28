@@ -1,0 +1,42 @@
+schema_version: 1
+plugin:
+  name: odin.stagehand
+  version: 0.1.0
+  description: AI-powered browser automation via Stagehand
+  runtime: external-process
+  entrypoint:
+    command: node
+    args: ["dist/index.js", "serve"]
+  compatibility:
+    core_version: ">=0.1.0 <1.0.0"
+  hooks:
+    - event: task.received
+      handler: on_task_received
+    - event: action.approved
+      handler: on_action_approved
+  capabilities:
+    - id: network.http
+      scope: [allowlisted_domains]
+    - id: browser.navigate
+      scope: [allowlisted_domains]
+    - id: browser.act
+      scope: [allowlisted_domains]
+    - id: browser.extract
+      scope: [allowlisted_domains]
+    - id: browser.observe
+      scope: [allowlisted_domains]
+    - id: browser.agent
+      scope: [allowlisted_domains]
+  storage:
+    - kind: kv
+      name: session_state
+      quota_mb: 100
+distribution:
+  source:
+    type: local-path
+    ref: .
+  integrity:
+    checksum_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+signing:
+  required: false
+  method: none
