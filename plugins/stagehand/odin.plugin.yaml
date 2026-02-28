@@ -36,7 +36,7 @@ distribution:
     type: local-path
     ref: .
   integrity:
-    checksum_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    checksum_sha256: "2b73846b5f0a503036efb3961912528234019e0382733ec889c634b5ef6e1549"
 signing:
   required: false
   method: none
