@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Stagehand } from "@browserbasehq/stagehand";
-import { loadConfig } from "../src/config.js";
+import { createTestStagehand } from "./helpers.js";
 import "dotenv/config";
 
 const testEmail = process.env.CFIPROS_TEST_EMAIL;
@@ -11,28 +11,9 @@ describe.skipIf(!hasCredentials)(
   "Phase 3: Authenticated User Journey — app.cfipros.com",
   () => {
     let stagehand: Stagehand;
-    const config = loadConfig();
 
     beforeAll(async () => {
-      if (!hasCredentials) {
-        console.warn(
-          "Skipping journey tests: CFIPROS_TEST_EMAIL and CFIPROS_TEST_PASSWORD not set",
-        );
-        return;
-      }
-
-      stagehand = new Stagehand({
-        env: "LOCAL",
-        modelName: config.primaryModel,
-        localBrowserLaunchOptions: {
-          headless: config.headless,
-          ...(config.chromePath ? { executablePath: config.chromePath } : {}),
-          args: ["--no-sandbox", "--disable-setuid-sandbox"],
-        },
-        domSettleTimeoutMs: config.domSettleTimeout,
-        selfHeal: true,
-        verbose: 0,
-      });
+      stagehand = createTestStagehand();
       await stagehand.init();
     }, 30_000);
 

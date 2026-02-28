@@ -10,6 +10,14 @@ import type { EventEnvelope, PluginDirective } from "./protocol.js";
 
 const config = loadConfig();
 
+const SUPPORTED_CAPABILITIES = new Set([
+  "browser.navigate",
+  "browser.act",
+  "browser.extract",
+  "browser.observe",
+  "browser.agent",
+]);
+
 function emit(directive: PluginDirective): void {
   process.stdout.write(JSON.stringify(directive) + "\n");
 }
@@ -22,20 +30,11 @@ function emitNoop(): void {
  * Route a task.received event to the appropriate capability request.
  */
 function handleTaskReceived(event: EventEnvelope): void {
-  const payload = event.payload as Record<string, unknown>;
+  const payload = event.payload;
   const taskType = (payload.task_type as string) || "";
   const project = event.project || "default";
 
-  const capabilityMap: Record<string, string> = {
-    "browser.navigate": "browser.navigate",
-    "browser.act": "browser.act",
-    "browser.extract": "browser.extract",
-    "browser.observe": "browser.observe",
-    "browser.agent": "browser.agent",
-  };
-
-  const capId = capabilityMap[taskType];
-  if (!capId) {
+  if (!SUPPORTED_CAPABILITIES.has(taskType)) {
     emitNoop();
     return;
   }
@@ -45,7 +44,7 @@ function handleTaskReceived(event: EventEnvelope): void {
   if (url && !isDomainAllowed(url, config)) {
     emit({
       action: "request_capability",
-      capability: { id: capId, project },
+      capability: { id: taskType, project },
       reason: `Domain not in allowlist: ${url}`,
       input,
       risk_tier: "destructive",
@@ -55,7 +54,7 @@ function handleTaskReceived(event: EventEnvelope): void {
 
   emit({
     action: "request_capability",
-    capability: { id: capId, project },
+    capability: { id: taskType, project },
     reason: `Execute ${taskType}`,
     input,
     risk_tier: "safe",
@@ -137,7 +136,7 @@ async function handleEvent(event: EventEnvelope): Promise<void> {
         break;
 
       case "action.approved": {
-        const payload = event.payload as Record<string, unknown>;
+        const payload = event.payload;
         const capId = (payload.capability_id as string) || "";
         const input = (payload.input as Record<string, unknown>) || {};
         const result = await executeCapability(capId, input);

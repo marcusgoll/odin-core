@@ -3,11 +3,13 @@ import { type StagehandPluginConfig } from "./config.js";
 
 let instance: Stagehand | null = null;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
+let closing = false;
 
 export async function getStagehand(config: StagehandPluginConfig): Promise<Stagehand> {
-  resetIdleTimer(config);
-
-  if (instance) return instance;
+  if (instance) {
+    resetIdleTimer(config);
+    return instance;
+  }
 
   const stagehand = new Stagehand({
     env: "LOCAL",
@@ -23,10 +25,13 @@ export async function getStagehand(config: StagehandPluginConfig): Promise<Stage
 
   await stagehand.init();
   instance = stagehand;
+  resetIdleTimer(config);
   return stagehand;
 }
 
 export async function shutdownBrowser(): Promise<void> {
+  if (closing) return;
+  closing = true;
   if (idleTimer) {
     clearTimeout(idleTimer);
     idleTimer = null;
@@ -35,6 +40,7 @@ export async function shutdownBrowser(): Promise<void> {
     await instance.close();
     instance = null;
   }
+  closing = false;
 }
 
 function resetIdleTimer(config: StagehandPluginConfig): void {

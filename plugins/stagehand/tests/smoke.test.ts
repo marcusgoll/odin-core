@@ -1,25 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Stagehand } from "@browserbasehq/stagehand";
-import { loadConfig } from "../src/config.js";
+import { createTestStagehand } from "./helpers.js";
 import "dotenv/config";
 
 describe("Phase 1: Smoke Tests — cfipros.com", () => {
   let stagehand: Stagehand;
-  const config = loadConfig();
 
   beforeAll(async () => {
-    stagehand = new Stagehand({
-      env: "LOCAL",
-      modelName: config.primaryModel,
-      localBrowserLaunchOptions: {
-        headless: config.headless,
-        ...(config.chromePath ? { executablePath: config.chromePath } : {}),
-        args: ["--no-sandbox", "--disable-setuid-sandbox"],
-      },
-      domSettleTimeoutMs: config.domSettleTimeout,
-      selfHeal: true,
-      verbose: 0,
-    });
+    stagehand = createTestStagehand();
     await stagehand.init();
   }, 60_000);
 
