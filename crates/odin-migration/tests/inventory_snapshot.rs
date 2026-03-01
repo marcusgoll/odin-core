@@ -60,7 +60,8 @@ fn inventory_snapshot_is_deterministic_and_counts_fixture_sections() {
     .expect("inventory command should succeed");
 
     let actual = fs::read_to_string(&output_path).expect("read inventory output");
-    let expected = "{\n  \"skills\": 3,\n  \"learnings\": 2,\n  \"checkpoints\": 1,\n  \"events\": 4\n}\n";
+    let expected =
+        "{\n  \"skills\": 3,\n  \"learnings\": 2,\n  \"checkpoints\": 1,\n  \"events\": 4\n}\n";
 
     assert_eq!(actual, expected, "inventory snapshot must be stable");
 }
@@ -78,7 +79,8 @@ fn inventory_snapshot_rejects_missing_input_directory() {
 
     let err = result.expect_err("missing input directory should fail");
     assert!(
-        err.to_string().contains("inventory input directory does not exist"),
+        err.to_string()
+            .contains("inventory input directory does not exist"),
         "unexpected error: {err:#}"
     );
 }
