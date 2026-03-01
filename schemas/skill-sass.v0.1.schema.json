@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://odin-core.dev/schemas/skill-sass.v0.1.schema.json",
+  "title": "Odin Skill SASS v0.1",
+  "type": "object",
+  "required": [
+    "skill_id",
+    "version",
+    "permissions",
+    "states",
+    "initial_state"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "skill_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "permissions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "states": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "end": {
+            "type": "boolean"
+          },
+          "transitions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "event",
+                "target"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "event": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "target": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "guard": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "initial_state": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

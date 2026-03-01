@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<skill id="skill.name" version="0.1.0" scope="project" trust_level="CAUTION">
+  <description>Template for SASS v0.1 compliant skills.</description>
+
+  <capability_manifest>
+    <allow capability="repo.read"/>
+    <allow capability="shell.exec"/>
+    <deny capability="repo.delete"/>
+    <deny capability="network.egress"/>
+  </capability_manifest>
+
+  <runtime start_state="wake_up">
+    <coordinates>
+      <field name="workspace_root" required="true"/>
+      <field name="project_id" required="true"/>
+      <field name="task_id" required="true"/>
+      <field name="skill_id" required="true"/>
+      <field name="state_id" required="true"/>
+      <field name="attempt_count" required="true"/>
+      <field name="last_artifacts" required="true"/>
+      <field name="allowed_capabilities" required="true"/>
+    </coordinates>
+
+    <guards>
+      <guard id="guard_context_ready" expr="context.ready == true"/>
+      <guard id="guard_resume_allowed" expr="checkpoint.valid == true"/>
+      <guard id="guard_start_allowed" expr="checkpoint.valid == false"/>
+      <guard id="guard_step_preconditions" expr="inputs.valid == true"/>
+      <guard id="guard_blocked" expr="inputs.valid == false"/>
+    </guards>
+
+    <states>
+      <state id="wake_up" type="checkpoint" idempotence="safe_repeat"/>
+      <state id="perform_step" type="operational" idempotence="requires_checkpoint"/>
+      <state id="failure_precondition" type="failure" idempotence="safe_repeat"/>
+      <state id="exit_success" type="exit" terminal="true"/>
+      <state id="exit_failed" type="exit" terminal="true"/>
+      <state id="exit_blocked" type="exit" terminal="true"/>
+    </states>
+
+    <transitions>
+      <transition from="wake_up" to="perform_step" on="resume" guard_ref="guard_resume_allowed"/>
+      <transition from="wake_up" to="perform_step" on="restart" guard_ref="guard_start_allowed"/>
+      <transition from="wake_up" to="exit_blocked" on="capability_denied" guard_ref="guard_blocked"/>
+      <transition from="perform_step" to="exit_success" on="step_complete" guard_ref="guard_step_preconditions"/>
+      <transition from="perform_step" to="failure_precondition" on="guard_failed" guard_ref="guard_blocked"/>
+      <transition from="failure_precondition" to="exit_failed" on="abort" guard_ref="guard_context_ready"/>
+    </transitions>
+  </runtime>
+</skill>

@@ -8,7 +8,7 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from rich.console import Console, Group
@@ -130,7 +130,7 @@ def _render_core(data: dict[str, PanelData], profile: dict, width: int, height: 
 def _json_output(profile: dict, data: dict[str, PanelData]) -> str:
     payload = {
         "profile": profile["name"],
-        "collected_at": datetime.utcnow().isoformat() + "Z",
+        "collected_at": datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z"),
         "orchestrator": data["orchestrator"].to_dict(),
         "inbox": data["inbox"].to_dict(),
         "kanban": data["kanban"].to_dict(),

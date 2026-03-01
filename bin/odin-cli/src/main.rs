@@ -3,8 +3,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::Context;
+use anyhow::{anyhow, Context};
+use clap::{Parser, Subcommand, ValueEnum};
 use odin_audit::NoopAuditSink;
 use odin_compat_bash::{
     BashBackendStateAdapter, BashFailoverAdapter, BashTaskIngressAdapter, LegacyScriptPaths,
@@ -12,7 +14,6 @@ use odin_compat_bash::{
 use odin_core_runtime::{
     BackendState, DryRunExecutor, ExternalProcessPluginRunner, OrchestratorRuntime, TaskIngress,
 };
-use odin_migration::{run as run_migration_command, MigrationCommand};
 use odin_plugin_protocol::{ActionRequest, CapabilityRequest, RiskTier};
 use odin_policy_engine::StaticPolicyEngine;
 
@@ -39,272 +40,134 @@ impl Default for CliConfig {
     }
 }
 
-const MIGRATE_HELP: &str = "\
-Usage: odin-cli migrate <COMMAND>
-
-Commands:
-  export    Export legacy data into migration artifacts
-  validate  Validate migration artifacts
-  import    Import migration artifacts into odin-core
-  inventory Create migration inventory snapshot
-";
-
-const MIGRATE_EXPORT_HELP: &str = "\
-Usage: odin-cli migrate export --source-root <dir> --odin-dir <dir> --out <dir>
-
-Export legacy data into migration artifacts.
-";
-
-const MIGRATE_VALIDATE_HELP: &str = "\
-Usage: odin-cli migrate validate --bundle <bundle-dir>
-
-Validate migration artifacts.
-";
-
-const MIGRATE_IMPORT_HELP: &str = "\
-Usage: odin-cli migrate import
-
-Import migration artifacts into odin-core.
-";
-
-const MIGRATE_INVENTORY_HELP: &str = "\
-Usage: odin-cli migrate inventory --input <dir> --output <path>
-
-Create inventory snapshot from migration fixture data.
-";
-
-fn parse_export_flags(args: &[String]) -> anyhow::Result<(PathBuf, PathBuf, PathBuf)> {
-    let mut source_root: Option<PathBuf> = None;
-    let mut odin_dir: Option<PathBuf> = None;
-    let mut out_dir: Option<PathBuf> = None;
-
-    let mut index = 0;
-    while index < args.len() {
-        match args[index].as_str() {
-            "--source-root" => {
-                let Some(value) = args.get(index + 1) else {
-                    anyhow::bail!("missing value for --source-root");
-                };
-                source_root = Some(PathBuf::from(value));
-                index += 2;
-            }
-            "--odin-dir" => {
-                let Some(value) = args.get(index + 1) else {
-                    anyhow::bail!("missing value for --odin-dir");
-                };
-                odin_dir = Some(PathBuf::from(value));
-                index += 2;
-            }
-            "--out" => {
-                let Some(value) = args.get(index + 1) else {
-                    anyhow::bail!("missing value for --out");
-                };
-                out_dir = Some(PathBuf::from(value));
-                index += 2;
-            }
-            other => anyhow::bail!("unknown migrate export argument: {other}"),
-        }
-    }
-
-    let source_root =
-        source_root.ok_or_else(|| anyhow::anyhow!("missing required flag: --source-root"))?;
-    let odin_dir = odin_dir.ok_or_else(|| anyhow::anyhow!("missing required flag: --odin-dir"))?;
-    let out_dir = out_dir.ok_or_else(|| anyhow::anyhow!("missing required flag: --out"))?;
-
-    Ok((source_root, odin_dir, out_dir))
+#[derive(Clone, Debug, Parser)]
+#[command(name = "odin-cli")]
+#[command(about = "Odin runtime and bootstrap CLI")]
+struct Cli {
+    #[arg(long = "config", default_value = "config/default.yaml", global = true)]
+    config_path: String,
+    #[arg(long, global = true)]
+    legacy_root: Option<PathBuf>,
+    #[arg(long, default_value = "/var/odin", global = true)]
+    legacy_odin_dir: PathBuf,
+    #[arg(long, default_value = "examples/private-plugins", global = true)]
+    plugins_root: PathBuf,
+    #[arg(long, global = true)]
+    task_file: Option<PathBuf>,
+    #[arg(long, global = true)]
+    run_once: bool,
+    #[command(subcommand)]
+    command: Option<CliCommand>,
 }
 
-fn parse_inventory_flags(args: &[String]) -> anyhow::Result<(PathBuf, PathBuf)> {
-    let mut input_dir: Option<PathBuf> = None;
-    let mut output_path: Option<PathBuf> = None;
-
-    let mut index = 0;
-    while index < args.len() {
-        match args[index].as_str() {
-            "--input" => {
-                let Some(value) = args.get(index + 1) else {
-                    anyhow::bail!("missing value for --input");
-                };
-                input_dir = Some(PathBuf::from(value));
-                index += 2;
-            }
-            "--output" => {
-                let Some(value) = args.get(index + 1) else {
-                    anyhow::bail!("missing value for --output");
-                };
-                output_path = Some(PathBuf::from(value));
-                index += 2;
-            }
-            other => anyhow::bail!("unknown migrate inventory argument: {other}"),
-        }
-    }
-
-    let input_dir = input_dir.ok_or_else(|| anyhow::anyhow!("missing required flag: --input"))?;
-    let output_path =
-        output_path.ok_or_else(|| anyhow::anyhow!("missing required flag: --output"))?;
-    Ok((input_dir, output_path))
+#[derive(Clone, Debug, Subcommand)]
+enum CliCommand {
+    Connect {
+        provider: String,
+        #[arg(value_enum)]
+        auth_mode: AuthMode,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        confirm: bool,
+    },
+    Start {
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        confirm: bool,
+    },
+    Tui {
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        confirm: bool,
+    },
+    Inbox {
+        #[command(subcommand)]
+        command: InboxCommand,
+    },
+    Gateway {
+        #[command(subcommand)]
+        command: GatewayCommand,
+    },
+    Verify {
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
-fn parse_validate_flags(args: &[String]) -> anyhow::Result<PathBuf> {
-    let mut bundle_dir: Option<PathBuf> = None;
-
-    let mut index = 0;
-    while index < args.len() {
-        match args[index].as_str() {
-            "--bundle" => {
-                let Some(value) = args.get(index + 1) else {
-                    anyhow::bail!("missing value for --bundle");
-                };
-                bundle_dir = Some(PathBuf::from(value));
-                index += 2;
-            }
-            other => anyhow::bail!("unknown migrate validate argument: {other}"),
-        }
-    }
-
-    bundle_dir.ok_or_else(|| anyhow::anyhow!("missing required flag: --bundle"))
+#[derive(Clone, Debug, Subcommand)]
+enum InboxCommand {
+    Add {
+        title: String,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        confirm: bool,
+    },
+    List {
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
-fn reject_trailing_migrate_args(command: &str, args: &[String]) -> anyhow::Result<()> {
-    if args.is_empty() {
-        return Ok(());
-    }
+#[derive(Clone, Debug, Subcommand)]
+enum GatewayCommand {
+    Add {
+        #[arg(value_enum)]
+        source: GatewaySource,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        confirm: bool,
+    },
+}
 
-    anyhow::bail!(
-        "unexpected argument(s) for migrate {command}: {}",
-        args.join(" ")
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum AuthMode {
+    Oauth,
+    Api,
+}
+
+impl AuthMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Oauth => "oauth",
+            Self::Api => "api",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum GatewaySource {
+    Cli,
+    Slack,
+    Telegram,
+}
+
+impl GatewaySource {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Cli => "cli",
+            Self::Slack => "slack",
+            Self::Telegram => "telegram",
+        }
+    }
+}
+
+fn now_unix_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
+fn print_inbox_normalized_fields(title: &str) {
+    let timestamp = now_unix_timestamp();
+    println!(
+        "normalized inbox item title={title} raw_text={title} source=cli timestamp={timestamp}"
     );
-}
-
-fn handle_migrate_args(args: &[String]) -> anyhow::Result<bool> {
-    if args.first().map(String::as_str) != Some("migrate") {
-        return Ok(false);
-    }
-
-    match args.get(1).map(String::as_str) {
-        None | Some("--help") | Some("-h") => {
-            println!("{MIGRATE_HELP}");
-            Ok(true)
-        }
-        Some("export") => {
-            let sub_args = &args[2..];
-            if matches!(
-                sub_args.first().map(String::as_str),
-                Some("--help") | Some("-h")
-            ) {
-                if sub_args.len() != 1 {
-                    reject_trailing_migrate_args("export", &sub_args[1..])?;
-                }
-                println!("{MIGRATE_EXPORT_HELP}");
-            } else {
-                let (source_root, odin_dir, out_dir) = parse_export_flags(sub_args)?;
-                run_migration_command(MigrationCommand::Export {
-                    source_root,
-                    odin_dir,
-                    out_dir,
-                })?;
-            }
-            Ok(true)
-        }
-        Some("validate") => {
-            let sub_args = &args[2..];
-            if matches!(
-                sub_args.first().map(String::as_str),
-                Some("--help") | Some("-h")
-            ) {
-                if sub_args.len() != 1 {
-                    reject_trailing_migrate_args("validate", &sub_args[1..])?;
-                }
-                println!("{MIGRATE_VALIDATE_HELP}");
-            } else {
-                let bundle_dir = parse_validate_flags(sub_args)?;
-                run_migration_command(MigrationCommand::Validate { bundle_dir })?;
-            }
-            Ok(true)
-        }
-        Some("import") => {
-            let sub_args = &args[2..];
-            if matches!(
-                sub_args.first().map(String::as_str),
-                Some("--help") | Some("-h")
-            ) {
-                if sub_args.len() != 1 {
-                    reject_trailing_migrate_args("import", &sub_args[1..])?;
-                }
-                println!("{MIGRATE_IMPORT_HELP}");
-            } else {
-                reject_trailing_migrate_args("import", sub_args)?;
-                run_migration_command(MigrationCommand::Import)?;
-            }
-            Ok(true)
-        }
-        Some("inventory") => {
-            let sub_args = &args[2..];
-            if matches!(
-                sub_args.first().map(String::as_str),
-                Some("--help") | Some("-h")
-            ) {
-                if sub_args.len() != 1 {
-                    reject_trailing_migrate_args("inventory", &sub_args[1..])?;
-                }
-                println!("{MIGRATE_INVENTORY_HELP}");
-            } else {
-                let (input_dir, output_path) = parse_inventory_flags(&args[2..])?;
-                run_migration_command(MigrationCommand::Inventory {
-                    input_dir,
-                    output_path,
-                })?;
-            }
-            Ok(true)
-        }
-        Some(other) => anyhow::bail!("unknown migrate subcommand: {other}"),
-    }
-}
-
-fn handle_migrate_surface() -> anyhow::Result<bool> {
-    let args: Vec<String> = env::args().skip(1).collect();
-    handle_migrate_args(&args)
-}
-
-fn parse_cli_config() -> CliConfig {
-    let mut cfg = CliConfig::default();
-    let mut args = env::args().skip(1);
-
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--config" => {
-                if let Some(path) = args.next() {
-                    cfg.config_path = path;
-                }
-            }
-            "--legacy-root" => {
-                if let Some(path) = args.next() {
-                    cfg.legacy_root = Some(PathBuf::from(path));
-                }
-            }
-            "--legacy-odin-dir" => {
-                if let Some(path) = args.next() {
-                    cfg.legacy_odin_dir = PathBuf::from(path);
-                }
-            }
-            "--plugins-root" => {
-                if let Some(path) = args.next() {
-                    cfg.plugins_root = PathBuf::from(path);
-                }
-            }
-            "--task-file" => {
-                if let Some(path) = args.next() {
-                    cfg.task_file = Some(PathBuf::from(path));
-                }
-            }
-            "--run-once" => {
-                cfg.run_once = true;
-            }
-            _ => {}
-        }
-    }
-
-    cfg
 }
 
 fn sample_action_request() -> ActionRequest {
@@ -332,12 +195,227 @@ impl TaskIngress for StdoutTaskIngress {
     }
 }
 
-fn main() -> anyhow::Result<()> {
-    if handle_migrate_surface()? {
-        return Ok(());
+fn parse_legacy_cli_config(raw_args: &[String]) -> CliConfig {
+    let mut cfg = CliConfig::default();
+    let mut idx = 0usize;
+
+    while idx < raw_args.len() {
+        let arg = raw_args[idx].as_str();
+        match arg {
+            "--config" => {
+                if let Some(path) = raw_args.get(idx + 1) {
+                    cfg.config_path = path.clone();
+                    idx += 2;
+                    continue;
+                }
+            }
+            "--legacy-root" => {
+                if let Some(path) = raw_args.get(idx + 1) {
+                    cfg.legacy_root = Some(PathBuf::from(path));
+                    idx += 2;
+                    continue;
+                }
+            }
+            "--legacy-odin-dir" => {
+                if let Some(path) = raw_args.get(idx + 1) {
+                    cfg.legacy_odin_dir = PathBuf::from(path);
+                    idx += 2;
+                    continue;
+                }
+            }
+            "--plugins-root" => {
+                if let Some(path) = raw_args.get(idx + 1) {
+                    cfg.plugins_root = PathBuf::from(path);
+                    idx += 2;
+                    continue;
+                }
+            }
+            "--task-file" => {
+                if let Some(path) = raw_args.get(idx + 1) {
+                    cfg.task_file = Some(PathBuf::from(path));
+                    idx += 2;
+                    continue;
+                }
+            }
+            "--run-once" => {
+                cfg.run_once = true;
+                idx += 1;
+                continue;
+            }
+            _ => {}
+        }
+
+        if let Some(path) = arg.strip_prefix("--config=") {
+            if !path.is_empty() {
+                cfg.config_path = path.to_string();
+            }
+        } else if let Some(path) = arg.strip_prefix("--legacy-root=") {
+            if !path.is_empty() {
+                cfg.legacy_root = Some(PathBuf::from(path));
+            }
+        } else if let Some(path) = arg.strip_prefix("--legacy-odin-dir=") {
+            if !path.is_empty() {
+                cfg.legacy_odin_dir = PathBuf::from(path);
+            }
+        } else if let Some(path) = arg.strip_prefix("--plugins-root=") {
+            if !path.is_empty() {
+                cfg.plugins_root = PathBuf::from(path);
+            }
+        } else if let Some(path) = arg.strip_prefix("--task-file=") {
+            if !path.is_empty() {
+                cfg.task_file = Some(PathBuf::from(path));
+            }
+        }
+
+        idx += 1;
     }
 
-    let cfg = parse_cli_config();
+    cfg
+}
+
+fn parse_error_targets_native_contract(raw_args: &[String]) -> bool {
+    let mut idx = 0usize;
+    while idx < raw_args.len() {
+        let arg = raw_args[idx].as_str();
+        match arg {
+            "--config" | "--legacy-root" | "--legacy-odin-dir" | "--plugins-root"
+            | "--task-file" => {
+                idx += 2;
+                continue;
+            }
+            "--run-once" | "--help" | "-h" => {
+                idx += 1;
+                continue;
+            }
+            "--" => {
+                idx += 1;
+                break;
+            }
+            _ => {}
+        }
+
+        if arg.starts_with("--config=")
+            || arg.starts_with("--legacy-root=")
+            || arg.starts_with("--legacy-odin-dir=")
+            || arg.starts_with("--plugins-root=")
+            || arg.starts_with("--task-file=")
+        {
+            idx += 1;
+            continue;
+        }
+
+        if arg.starts_with('-') {
+            idx += 1;
+            continue;
+        }
+
+        return matches!(
+            arg,
+            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify"
+        );
+    }
+
+    if let Some(token) = raw_args.get(idx).map(String::as_str) {
+        return matches!(
+            token,
+            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify"
+        );
+    }
+
+    false
+}
+
+fn handle_bootstrap_command(command: CliCommand) -> anyhow::Result<()> {
+    match command {
+        CliCommand::Connect {
+            provider,
+            auth_mode,
+            dry_run,
+            confirm: _,
+        } => {
+            if dry_run {
+                println!(
+                    "DRY-RUN connect provider={provider} auth={}",
+                    auth_mode.as_str()
+                );
+            } else {
+                println!(
+                    "connect placeholder provider={provider} auth={}",
+                    auth_mode.as_str()
+                );
+            }
+            Ok(())
+        }
+        CliCommand::Start {
+            dry_run,
+            confirm: _,
+        } => {
+            if dry_run {
+                println!("DRY-RUN start");
+            } else {
+                println!("start placeholder");
+            }
+            Ok(())
+        }
+        CliCommand::Tui {
+            dry_run,
+            confirm: _,
+        } => {
+            if dry_run {
+                println!("DRY-RUN tui");
+            } else {
+                println!("tui placeholder");
+            }
+            Ok(())
+        }
+        CliCommand::Inbox { command } => match command {
+            InboxCommand::Add {
+                title,
+                dry_run,
+                confirm: _,
+            } => {
+                if dry_run {
+                    println!("DRY-RUN inbox add title={title}");
+                    print_inbox_normalized_fields(&title);
+                } else {
+                    println!("inbox add placeholder title={title}");
+                    print_inbox_normalized_fields(&title);
+                }
+                Ok(())
+            }
+            InboxCommand::List { dry_run: _ } => {
+                println!("inbox list placeholder (empty)");
+                Ok(())
+            }
+        },
+        CliCommand::Gateway { command } => match command {
+            GatewayCommand::Add {
+                source,
+                dry_run,
+                confirm: _,
+            } => {
+                if dry_run {
+                    println!("DRY-RUN gateway add source={}", source.as_str());
+                } else {
+                    println!("gateway add placeholder source={}", source.as_str());
+                }
+                Ok(())
+            }
+        },
+        CliCommand::Verify { dry_run } => {
+            if dry_run {
+                println!("DRY-RUN verify");
+                Ok(())
+            } else {
+                Err(anyhow!(
+                    "native non-dry-run verify is not implemented; use scripts/odin/odin verify or --dry-run"
+                ))
+            }
+        }
+    }
+}
+
+fn run_legacy_runtime(cfg: CliConfig) -> anyhow::Result<()> {
     println!("odin-cli starting with config: {}", cfg.config_path);
     println!("plugins root: {}", cfg.plugins_root.display());
 
@@ -417,150 +495,32 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::handle_migrate_args;
+fn main() -> anyhow::Result<()> {
+    let raw_args: Vec<String> = env::args().collect();
+    match Cli::try_parse_from(raw_args.clone()) {
+        Ok(cli) => {
+            let cfg = CliConfig {
+                config_path: cli.config_path.clone(),
+                legacy_root: cli.legacy_root.clone(),
+                legacy_odin_dir: cli.legacy_odin_dir.clone(),
+                plugins_root: cli.plugins_root.clone(),
+                task_file: cli.task_file.clone(),
+                run_once: cli.run_once,
+            };
 
-    fn args(parts: &[&str]) -> Vec<String> {
-        parts.iter().map(|part| part.to_string()).collect()
-    }
+            if let Some(command) = cli.command {
+                handle_bootstrap_command(command)?;
+                return Ok(());
+            }
 
-    #[test]
-    fn migrate_validate_import_reject_unexpected_trailing_args() {
-        for command in ["import"] {
-            let result = handle_migrate_args(&args(&["migrate", command, "extra"]));
-            let err = result.expect_err("trailing args should fail");
-            assert!(
-                err.to_string().contains(&format!(
-                    "unexpected argument(s) for migrate {command}: extra"
-                )),
-                "unexpected error for command {command}: {err:#}"
-            );
+            run_legacy_runtime(cfg)
         }
-    }
-
-    #[test]
-    fn migrate_validate_requires_bundle_flag() {
-        let result = handle_migrate_args(&args(&["migrate", "validate"]));
-        let err = result.expect_err("missing validate flags should fail");
-        assert!(
-            err.to_string().contains("missing required flag: --bundle"),
-            "unexpected error: {err:#}"
-        );
-    }
-
-    #[test]
-    fn migrate_validate_rejects_unknown_flag() {
-        let result = handle_migrate_args(&args(&[
-            "migrate",
-            "validate",
-            "--bundle",
-            "/tmp/bundle",
-            "--bogus",
-        ]));
-        let err = result.expect_err("unknown validate flags should fail");
-        assert!(
-            err.to_string()
-                .contains("unknown migrate validate argument: --bogus"),
-            "unexpected error: {err:#}"
-        );
-    }
-
-    #[test]
-    fn migrate_validate_help_rejects_trailing_args() {
-        let result = handle_migrate_args(&args(&["migrate", "validate", "--help", "extra"]));
-        let err = result.expect_err("help with trailing args should fail");
-        assert!(
-            err.to_string()
-                .contains("unexpected argument(s) for migrate validate: extra"),
-            "unexpected error: {err:#}"
-        );
-    }
-
-    #[test]
-    fn migrate_export_rejects_missing_required_flags() {
-        let result =
-            handle_migrate_args(&args(&["migrate", "export", "--source-root", "/tmp/src"]));
-        let err = result.expect_err("missing export flags should fail");
-        assert!(
-            err.to_string()
-                .contains("missing required flag: --odin-dir"),
-            "unexpected error: {err:#}"
-        );
-    }
-
-    #[test]
-    fn migrate_export_without_required_flags_fails() {
-        let result = handle_migrate_args(&args(&["migrate", "export"]));
-        let err = result.expect_err("missing export flags should fail");
-        assert!(
-            err.to_string()
-                .contains("missing required flag: --source-root"),
-            "unexpected error: {err:#}"
-        );
-    }
-
-    #[test]
-    fn migrate_export_rejects_unknown_flag() {
-        let result = handle_migrate_args(&args(&[
-            "migrate",
-            "export",
-            "--source-root",
-            "/tmp/src",
-            "--odin-dir",
-            "/tmp/odin",
-            "--out",
-            "/tmp/out",
-            "--bogus",
-        ]));
-        let err = result.expect_err("unknown export flags should fail");
-        assert!(
-            err.to_string()
-                .contains("unknown migrate export argument: --bogus"),
-            "unexpected error: {err:#}"
-        );
-    }
-
-    #[test]
-    fn migrate_export_help_rejects_trailing_args() {
-        let result = handle_migrate_args(&args(&["migrate", "export", "--help", "extra"]));
-        let err = result.expect_err("help with trailing args should fail");
-        assert!(
-            err.to_string()
-                .contains("unexpected argument(s) for migrate export: extra"),
-            "unexpected error: {err:#}"
-        );
-    }
-
-    #[test]
-    fn migrate_inventory_rejects_missing_required_flags() {
-        let result = handle_migrate_args(&args(&["migrate", "inventory", "--input", "/tmp/in"]));
-        let err = result.expect_err("missing --output should fail");
-        assert!(
-            err.to_string().contains("missing required flag: --output"),
-            "unexpected error: {err:#}"
-        );
-    }
-
-    #[test]
-    fn migrate_inventory_rejects_invalid_flag() {
-        let result = handle_migrate_args(&args(&["migrate", "inventory", "--bogus", "value"]));
-        let err = result.expect_err("unknown flags should fail");
-        assert!(
-            err.to_string()
-                .contains("unknown migrate inventory argument: --bogus"),
-            "unexpected error: {err:#}"
-        );
-    }
-
-    #[test]
-    fn migrate_inventory_help_rejects_trailing_args() {
-        let result = handle_migrate_args(&args(&["migrate", "inventory", "--help", "extra"]));
-        let err = result.expect_err("help with trailing args should fail");
-        assert!(
-            err.to_string()
-                .contains("unexpected argument(s) for migrate inventory: extra"),
-            "unexpected error: {err:#}"
-        );
+        Err(err) => {
+            if !parse_error_targets_native_contract(&raw_args[1..]) {
+                let cfg = parse_legacy_cli_config(&raw_args[1..]);
+                return run_legacy_runtime(cfg);
+            }
+            err.exit()
+        }
     }
 }
