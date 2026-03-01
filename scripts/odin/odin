@@ -113,6 +113,12 @@ odin_bootstrap_try_native() {
   return 127
 }
 
+# Handle import command directly (not delegated to native CLI)
+if [[ "${1:-}" == "import" ]]; then
+  shift
+  exec bash "${SCRIPT_DIR}/odin-import.sh" "$@"
+fi
+
 if odin_bootstrap_should_delegate_native "$@"; then
   if odin_bootstrap_try_native "$@"; then
     exit 0
