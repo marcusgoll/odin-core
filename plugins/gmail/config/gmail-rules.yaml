@@ -18,6 +18,20 @@ rules:
       - label: "Newsletters"
       - archive: true
 
+  - name: sentry_alerts
+    match:
+      from_pattern: "noreply@.*getsentry\\.com"
+    actions:
+      - label: "Alerts/Sentry"
+      - archive: true
+
+  - name: google_security
+    match:
+      from_pattern: "no-reply@accounts\\.google\\.com"
+      or_subject_pattern: "(security alert|suspicious sign-in|critical security)"
+    actions:
+      - label: "Alerts/Google"
+
   - name: spam_candidates
     match:
       subject_pattern: "(urgent|act now|limited time|winner|congratulations)"
