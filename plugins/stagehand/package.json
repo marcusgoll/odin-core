@@ -1,0 +1,37 @@
+{
+  "name": "odin-plugin-stagehand",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:smoke": "vitest run tests/smoke.test.ts",
+    "test:extract": "vitest run tests/extract.test.ts",
+    "test:journey": "vitest run tests/journey.test.ts",
+    "test:qa": "vitest run tests/qa/",
+    "test:qa:public": "vitest run tests/qa/public/",
+    "test:qa:auth": "vitest run tests/qa/auth/",
+    "test:qa:student": "vitest run tests/qa/student/",
+    "test:qa:cfi": "vitest run tests/qa/cfi/",
+    "test:qa:maneuvers": "vitest run tests/qa/maneuvers/",
+    "qa:setup": "npx tsx tests/qa/scripts/setup-accounts.ts",
+    "serve": "node dist/index.js serve"
+  },
+  "dependencies": {
+    "@browserbasehq/stagehand": "^2",
+    "zod": "^3.24"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/pg": "^8.18.0",
+    "argon2": "^0.44.0",
+    "dotenv": "^16",
+    "pg": "^8.19.0",
+    "typescript": "^5.7",
+    "vitest": "^3"
+  }
+}

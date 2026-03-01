@@ -1,0 +1,21 @@
+# Odin guardrails policy example.
+#
+# Copy to config/guardrails.yaml (or pass --guardrails <path> to the CLI).
+#
+# Explicit acknowledgement gate:
+#   export ODIN_GUARDRAILS_ACK=yes
+#
+# Non-readonly actions are blocked unless ODIN_GUARDRAILS_ACK=yes.
+#
+# Built-in action categories:
+# - integration: connect, gateway.add
+# - mutating: start, tui, inbox.add
+# - readonly: inbox.list, verify, help
+#
+# Use action IDs for denylist entries (examples: connect, start, inbox.add, gateway.add).
+denylist:
+  - gateway.add
+
+# Entries can be either action IDs or categories.
+confirm_required:
+  - integration
