@@ -93,7 +93,7 @@ pub fn parse_scoped_registry(
     scope: SkillScope,
 ) -> Result<SkillRegistry, SkillRegistryLoadError> {
     let raw_registry: RawSkillRegistry =
-        serde_yaml::from_str(raw).map_err(|e| SkillRegistryLoadError::Parse(e.to_string()))?;
+        serde_yml::from_str(raw).map_err(|e| SkillRegistryLoadError::Parse(e.to_string()))?;
     let schema_version = raw_registry.schema_version;
     if schema_version != 1 {
         return Err(SkillRegistryLoadError::Parse(format!(
