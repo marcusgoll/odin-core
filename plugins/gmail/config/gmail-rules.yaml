@@ -1,0 +1,41 @@
+schema_version: 1
+account: personal
+
+rules:
+  - name: receipts
+    match:
+      from_pattern: "(receipt|order|invoice|payment)@"
+      or_subject_pattern: "(order confirm|receipt|invoice)"
+    actions:
+      - label: "Receipts"
+      - archive: true
+
+  - name: newsletters
+    match:
+      headers:
+        List-Unsubscribe: present
+    actions:
+      - label: "Newsletters"
+      - archive: true
+
+  - name: spam_candidates
+    match:
+      subject_pattern: "(urgent|act now|limited time|winner|congratulations)"
+    actions:
+      - label: "Spam/Review"
+      - request_trash: true
+
+  - name: needs_reply
+    match:
+      is_direct: true
+      from_in_contacts: true
+      has_question: true
+    actions:
+      - label: "Needs Reply"
+      - draft_reply: true
+
+  - name: uncategorized
+    match:
+      no_rule_matched: true
+    actions:
+      - label: "Triage/Review"

@@ -1,0 +1,48 @@
+schema_version: 1
+plugin:
+  name: odin.gmail
+  version: 0.1.0
+  description: Gmail inbox triage — label, archive, unsubscribe, draft replies
+  runtime: external-process
+  entrypoint:
+    command: node
+    args: ["dist/index.js", "serve"]
+  compatibility:
+    core_version: ">=0.1.0 <1.0.0"
+  hooks:
+    - event: task.received
+      handler: on_task_received
+    - event: action.approved
+      handler: on_action_approved
+  capabilities:
+    - id: gmail.inbox.list
+      scope: [project]
+    - id: gmail.message.read
+      scope: [project]
+    - id: gmail.label.list
+      scope: [project]
+    - id: gmail.label.apply
+      scope: [project]
+    - id: gmail.thread.archive
+      scope: [project]
+    - id: gmail.thread.mark_read
+      scope: [project]
+    - id: gmail.draft.create
+      scope: [project]
+    - id: gmail.unsubscribe
+      scope: [project]
+    - id: gmail.draft.send
+      scope: [project]
+    - id: gmail.message.trash
+      scope: [project]
+    - id: gmail.message.delete
+      scope: [project]
+distribution:
+  source:
+    type: local-path
+    ref: .
+  integrity:
+    checksum_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+signing:
+  required: false
+  method: none
