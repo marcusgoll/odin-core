@@ -2,8 +2,10 @@
 .env
 .DS_Store
 *.log
-/state
-/logs
+/state/*
+!/state/.gitkeep
+/logs/*
+!/logs/.gitkeep
 
 # Python cache
 __pycache__/

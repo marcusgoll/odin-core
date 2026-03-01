@@ -2,17 +2,65 @@
 
 Vendor-agnostic, policy-driven orchestrator core with plugin-first extensibility.
 
+Odin is a self-hosted orchestration engine that routes tasks through a policy engine, executes them via plugins, and logs every decision for audit. It replaces ad-hoc shell scripts with a structured runtime that enforces capability-based security, supports both native Rust plugins and legacy Bash compatibility, and exposes a TUI dashboard for monitoring.
+
+## Prerequisites
+
+- **Rust** stable toolchain (1.75+) via [rustup](https://rustup.rs)
+- **Docker** and Docker Compose (for containerized deployment)
+- **Python 3.10+** with `rich` (`pip install rich`) for the TUI dashboard
+- **jq** (used by verification scripts)
+
 ## Quickstart (recommended)
 
+The fastest way to get started — automated setup with LLM connection:
+
 ```bash
-cp .env.example .env
-docker compose up -d
+./setup.sh
 ```
+
+Or headless for LLM agents:
+
+```bash
+./setup.sh --llm claude --auth oauth --skip-tests
+```
+
+For manual setup paths (Docker or Cargo), see `docs/quickstart.md`.
 
 ## Local dev
 
 ```bash
-cargo run -p odin-cli -- --config config/default.yaml
+cargo run -p odin-cli -- --config config/default.yaml --run-once
+```
+
+Omit `--run-once` to keep the runtime running (enters a 60-second poll loop).
+
+## Bootstrap wrapper contract (minimal)
+
+```bash
+scripts/odin/odin help
+scripts/odin/odin connect claude oauth --dry-run
+scripts/odin/odin start --dry-run
+scripts/odin/odin tui --dry-run
+scripts/odin/odin inbox add "test task" --dry-run
+scripts/odin/odin inbox list
+scripts/odin/odin gateway add cli --dry-run
+scripts/odin/odin verify --dry-run
+```
+
+Conservative default: if `config/guardrails.yaml` is missing, mutating commands are blocked unless `--dry-run` is used.
+
+## Bootstrap docs (executable)
+
+- CLI quickstart: `docs/quickstart.md`
+- n8n adapter (optional): `docs/integrations/n8n.md`
+- Slack adapter (optional): `docs/integrations/slack.md`
+- Telegram adapter (optional): `docs/integrations/telegram.md`
+
+Smoke check for documented commands:
+
+```bash
+bash scripts/verify/docs-command-smoke.sh
 ```
 
 ## TUI Dashboard
@@ -61,17 +109,34 @@ Use `--legacy-root /path/to/cfipros` to enqueue follow-up tasks via legacy inbox
 ## Verification Gates
 
 ```bash
-bash scripts/verify/compat-regression.sh --legacy-root /home/orchestrator/cfipros
 bash scripts/verify/quickstart-smoke.sh
 bash scripts/verify/plugin-install-matrix.sh
-bash scripts/verify/skill-plugin-governance-smoke.sh
+bash scripts/verify/workflow-contract.sh
+bash scripts/verify/tui-core-smoke.sh
+bash scripts/verify/bootstrap-wrapper-smoke.sh
+bash scripts/verify/guardrails-gate-smoke.sh
+bash scripts/verify/mode-confidence-smoke.sh
+bash scripts/verify/skills-contract.sh
+bash scripts/verify/docs-command-smoke.sh
+bash scripts/verify/compat-regression.sh --legacy-root /path/to/legacy-repo
 ```
 
-## Governance docs
+## SASS skills (strict mode)
+
+SASS v0.1 is the state-aware skill system used by Odin. Strict mode requires `wake_up`,
+explicit end states, guarded decision branches, and least-privilege permissions.
+
+Read the full contract and migration guide:
 
 - `docs/skill-system.md`
-- `docs/stagehand-safety.md`
-- `docs/plugin-system.md`
+
+Common commands:
+
+```bash
+cargo run -p odin-cli -- skill validate examples/skills/sass/v0.1/run_tests.skill.xml
+cargo run -p odin-cli -- skill mermaid examples/skills/sass/v0.1/run_tests.skill.xml
+bash scripts/verify/sass-skill-governance-smoke.sh
+```
 
 ## Scope
 

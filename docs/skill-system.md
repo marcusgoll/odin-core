@@ -1,88 +1,57 @@
-# Skill System Governance
+# Skill System (SASS v0.1)
 
-This document defines operator workflows for skill discovery, install, trust review, delegation manifests, and evidence collection.
+SASS v0.1 defines the canonical, state-aware skill contract used by Odin.
 
-## Scoped registries and precedence
+## Strict mode
 
-Skill registries are scoped and resolved in this order:
+SASS runs in strict mode by default:
 
-1. user (`config/skills.user.yaml`)
-2. project (`config/skills.project.yaml`)
-3. global (`config/skills.global.yaml`)
+- A skill must begin with `wake_up`.
+- A skill must declare explicit end state(s).
+- Every transition target must reference an existing state.
+- Decision-state transitions must include guards.
+- Non-end states must define `on_failure`.
+- Skills must declare least-privilege permissions (`allowed_commands`, `allowed_plugins`, `network_policy`).
 
-Each file must match `schemas/skill-registry.v1.schema.json`.
+## Authoring format
 
-Use CLI discovery per scope:
+- Schema: `schemas/skill-sass.v0.1.schema.json`
+- Canonical examples: `examples/skills/sass/v0.1/*.skill.xml`
 
-```bash
-cargo run -p odin-cli -- governance discover --scope project --registry config/skills.project.yaml --run-once
-```
+## Validation and diagram tooling
 
-Trust values are:
-
-- `trusted`: local/reviewed/pinned source
-- `caution`: partially trusted, manual invocation preferred
-- `untrusted`: install requires explicit acknowledgment
-
-## Import risk scan and acknowledgement gate
-
-`governance install` evaluates trust and risk findings before allowing install. The risk scanner checks script/readme content for shell/network/secret/delete indicators.
-
-Blocked example (no acknowledgement):
+Validate a skill:
 
 ```bash
-cargo run -p odin-cli -- governance install --name suspicious-skill --trust-level untrusted --run-once
+cargo run -p odin-cli -- skill validate examples/skills/sass/v0.1/run_tests.skill.xml
 ```
 
-Expected result: JSON with `status: "blocked"` and `error_code: "ack_required"`.
-
-Proceed only with explicit acceptance:
+Compile XML to Mermaid:
 
 ```bash
-cargo run -p odin-cli -- governance install --name suspicious-skill --trust-level untrusted --ack --run-once
+cargo run -p odin-cli -- skill mermaid examples/skills/sass/v0.1/run_tests.skill.xml
 ```
 
-If scripts are present or secret-touching findings are detected, acknowledgement is also required.
+## Breaking changes
 
-## Capability manifest requirements for delegation
+- Legacy, non-state-aware multi-step skill definitions are not accepted by strict SASS validators.
+- Skills missing `wake_up`, end states, guard coverage, or transition integrity fail validation.
 
-Delegated actions must include `capability-manifest.v1` (`schema_version: 1`) with:
+## Migration path
 
-- `plugin`
-- `capabilities[]` entries with `id` and optional `scope[]`
+1. Convert the skill to XML and add `wake_up` as the initial state.
+2. Model state transitions explicitly, including `on_failure` for non-end states.
+3. Add guards to decision branches.
+4. Tighten permissions to least privilege.
+5. Add a Mermaid diagram generated from the same XML.
+6. Add a negative fixture to prove lint failure behavior.
 
-Runtime enforcement is fail-closed:
+## Verification matrix
 
-- capability missing from manifest -> `manifest_capability_not_granted`
-- requested scope not granted -> `manifest_scope_not_granted`
-- plugin mismatch -> `manifest_plugin_mismatch`
-- unsupported schema version -> `manifest_schema_version_unsupported`
-- stagehand capability misuse/unknown -> blocked
-
-Successful delegated execution emits governance audit events:
-
-- `governance.manifest.validated`
-- `governance.capability.used`
-
-Blocked execution emits:
-
-- `governance.manifest.denied`
-
-## Audit evidence required before "working" claims
-
-Do not claim install/enable/delegation is working without command evidence.
-
-Required evidence bundle:
-
-1. exact command used
-2. JSON summary output (`status`, `error_code`, checks)
-3. for delegated runtime actions, audit event evidence from sink/logs
-
-Minimum claim mapping:
-
-- "install blocked without ack" -> JSON shows `command: install`, `status: blocked`, `error_code: ack_required`
-- "stagehand enable blocked" -> JSON shows `command: enable-plugin`, `status: blocked`
-- "manifest denied" -> runtime result `ActionStatus::Blocked` and `governance.manifest.denied`
-- "manifest allowed and executed" -> runtime result `ActionStatus::Executed` and both validation/usage events
-
-Use `bash scripts/verify/skill-plugin-governance-smoke.sh` as the release smoke gate for these invariants.
+- Schema contract:
+  - `bash scripts/verify/sass-schema-contract.sh`
+- Governance smoke:
+  - `bash scripts/verify/sass-skill-governance-smoke.sh`
+- CLI tests:
+  - `cargo test -p odin-cli --test sass_skill_validate_cli -- --nocapture`
+  - `cargo test -p odin-cli --test sass_skill_mermaid_cli -- --nocapture`

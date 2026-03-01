@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<skill id="run_tests" version="0.1.0" scope="project" trust_level="CAUTION">
+  <description>Run project tests with guarded branching, retries, and explicit exits.</description>
+
+  <capability_manifest>
+    <allow capability="repo.read"/>
+    <allow capability="shell.exec"/>
+    <allow capability="test.exec"/>
+    <deny capability="repo.delete"/>
+    <deny capability="network.egress"/>
+  </capability_manifest>
+
+  <runtime start_state="wake_up">
+    <coordinates>
+      <field name="workspace_root" required="true"/>
+      <field name="project_id" required="true"/>
+      <field name="task_id" required="true"/>
+      <field name="skill_id" required="true"/>
+      <field name="state_id" required="true"/>
+      <field name="attempt_count" required="true"/>
+      <field name="last_artifacts" required="true"/>
+      <field name="allowed_capabilities" required="true"/>
+    </coordinates>
+
+    <guards>
+      <guard id="guard_context_loaded" expr="context.ready == true"/>
+      <guard id="guard_caps_present" expr="capabilities.test_exec == true"/>
+      <guard id="guard_caps_missing" expr="capabilities.test_exec == false"/>
+      <guard id="guard_workspace_found" expr="workspace.exists == true"/>
+      <guard id="guard_workspace_missing" expr="workspace.exists == false"/>
+      <guard id="guard_project_known" expr="project.detected == true"/>
+      <guard id="guard_project_unknown" expr="project.detected == false"/>
+      <guard id="guard_runtime_ready" expr="runtime.available == true"/>
+      <guard id="guard_runtime_missing" expr="runtime.available == false"/>
+      <guard id="guard_tests_discovered" expr="tests.count &gt; 0"/>
+      <guard id="guard_tests_missing" expr="tests.count == 0"/>
+      <guard id="guard_exec_ok" expr="exec.status in ['passed','failed']"/>
+      <guard id="guard_exec_error" expr="exec.status == 'error'"/>
+      <guard id="guard_retry_allowed" expr="attempt_count &lt; 2"/>
+      <guard id="guard_parseable" expr="result.parseable == true"/>
+      <guard id="guard_result_unparseable" expr="result.parseable == false"/>
+      <guard id="guard_result_passed" expr="result.failed == 0"/>
+      <guard id="guard_result_failed" expr="result.failed &gt; 0"/>
+    </guards>
+
+    <states>
+      <state id="wake_up" type="checkpoint" idempotence="safe_repeat"/>
+      <state id="detect_workspace" type="operational" idempotence="safe_repeat"/>
+      <state id="resolve_project" type="operational" idempotence="safe_repeat"/>
+      <state id="ensure_runtime" type="operational" idempotence="safe_repeat"/>
+      <state id="discover_tests" type="operational" idempotence="safe_repeat"/>
+      <state id="execute_tests" type="operational" idempotence="requires_checkpoint"/>
+      <state id="interpret_result" type="operational" idempotence="safe_repeat"/>
+
+      <state id="failure_permission_denied" type="failure" idempotence="safe_repeat"/>
+      <state id="failure_unknown_project" type="failure" idempotence="safe_repeat"/>
+      <state id="failure_missing_runtime" type="failure" idempotence="safe_repeat"/>
+      <state id="failure_tests_not_found" type="failure" idempotence="safe_repeat"/>
+      <state id="failure_execution_error" type="failure" idempotence="safe_repeat"/>
+      <state id="failure_result_unparseable" type="failure" idempotence="safe_repeat"/>
+
+      <state id="exit_success" type="exit" terminal="true"/>
+      <state id="exit_test_failures" type="exit" terminal="true"/>
+      <state id="exit_blocked" type="exit" terminal="true"/>
+    </states>
+
+    <transitions>
+      <transition from="wake_up" to="detect_workspace" on="resume_or_restart" guard_ref="guard_context_loaded"/>
+      <transition from="wake_up" to="failure_permission_denied" on="missing_capability" guard_ref="guard_caps_missing"/>
+
+      <transition from="detect_workspace" to="resolve_project" on="workspace_ready" guard_ref="guard_workspace_found"/>
+      <transition from="detect_workspace" to="failure_permission_denied" on="workspace_missing" guard_ref="guard_workspace_missing"/>
+
+      <transition from="resolve_project" to="ensure_runtime" on="project_detected" guard_ref="guard_project_known"/>
+      <transition from="resolve_project" to="failure_unknown_project" on="project_unknown" guard_ref="guard_project_unknown"/>
+
+      <transition from="ensure_runtime" to="discover_tests" on="runtime_ready" guard_ref="guard_runtime_ready"/>
+      <transition from="ensure_runtime" to="failure_missing_runtime" on="runtime_missing" guard_ref="guard_runtime_missing"/>
+
+      <transition from="discover_tests" to="execute_tests" on="tests_found" guard_ref="guard_tests_discovered"/>
+      <transition from="discover_tests" to="failure_tests_not_found" on="tests_missing" guard_ref="guard_tests_missing"/>
+
+      <transition from="execute_tests" to="interpret_result" on="exec_complete" guard_ref="guard_exec_ok"/>
+      <transition from="execute_tests" to="failure_execution_error" on="exec_error" guard_ref="guard_exec_error"/>
+
+      <transition from="failure_execution_error" to="execute_tests" on="retry" guard_ref="guard_retry_allowed"/>
+      <transition from="failure_execution_error" to="exit_blocked" on="retry_exhausted" guard_ref="guard_context_loaded"/>
+
+      <transition from="interpret_result" to="exit_success" on="all_passed" guard_ref="guard_result_passed"/>
+      <transition from="interpret_result" to="exit_test_failures" on="tests_failed" guard_ref="guard_result_failed"/>
+      <transition from="interpret_result" to="failure_result_unparseable" on="parse_error" guard_ref="guard_result_unparseable"/>
+
+      <transition from="failure_permission_denied" to="exit_blocked" on="abort" guard_ref="guard_context_loaded"/>
+      <transition from="failure_unknown_project" to="exit_blocked" on="abort" guard_ref="guard_context_loaded"/>
+      <transition from="failure_missing_runtime" to="exit_blocked" on="abort" guard_ref="guard_context_loaded"/>
+      <transition from="failure_tests_not_found" to="exit_blocked" on="abort" guard_ref="guard_context_loaded"/>
+      <transition from="failure_result_unparseable" to="exit_blocked" on="abort" guard_ref="guard_context_loaded"/>
+    </transitions>
+  </runtime>
+</skill>

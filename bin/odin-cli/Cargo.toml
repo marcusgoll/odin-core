@@ -6,15 +6,16 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+clap = { version = "4.5", features = ["derive"] }
 serde_json.workspace = true
 tracing.workspace = true
+roxmltree = "0.20"
 odin-audit = { path = "../../crates/odin-audit" }
 odin-compat-bash = { path = "../../crates/odin-compat-bash" }
 odin-core-runtime = { path = "../../crates/odin-core-runtime" }
-odin-governance = { path = "../../crates/odin-governance" }
 odin-plugin-protocol = { path = "../../crates/odin-plugin-protocol" }
 odin-policy-engine = { path = "../../crates/odin-policy-engine" }
 
 [dev-dependencies]
 assert_cmd = "2"
-tempfile = "3"
+predicates = "3"
