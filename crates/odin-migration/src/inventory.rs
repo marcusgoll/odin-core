@@ -22,7 +22,10 @@ impl InventoryCounts {
     }
 }
 
-pub fn write_inventory_snapshot(input_dir: &Path, output_path: &Path) -> anyhow::Result<InventoryCounts> {
+pub fn write_inventory_snapshot(
+    input_dir: &Path,
+    output_path: &Path,
+) -> anyhow::Result<InventoryCounts> {
     validate_input_directory(input_dir)?;
     reject_output_inside_counted_sections(input_dir, output_path)?;
 
@@ -44,8 +47,12 @@ pub fn write_inventory_snapshot(input_dir: &Path, output_path: &Path) -> anyhow:
         }
     }
 
-    fs::write(output_path, counts.to_stable_json())
-        .with_context(|| format!("failed to write inventory snapshot to {}", output_path.display()))?;
+    fs::write(output_path, counts.to_stable_json()).with_context(|| {
+        format!(
+            "failed to write inventory snapshot to {}",
+            output_path.display()
+        )
+    })?;
 
     Ok(counts)
 }
@@ -66,9 +73,16 @@ fn validate_input_directory(input_dir: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn reject_output_inside_counted_sections(input_dir: &Path, output_path: &Path) -> anyhow::Result<()> {
-    let input_root = fs::canonicalize(input_dir)
-        .with_context(|| format!("failed to canonicalize input directory {}", input_dir.display()))?;
+fn reject_output_inside_counted_sections(
+    input_dir: &Path,
+    output_path: &Path,
+) -> anyhow::Result<()> {
+    let input_root = fs::canonicalize(input_dir).with_context(|| {
+        format!(
+            "failed to canonicalize input directory {}",
+            input_dir.display()
+        )
+    })?;
     let output_abs = canonicalize_path_allow_missing(output_path)?;
 
     for section in COUNTED_SECTIONS {
@@ -97,16 +111,26 @@ fn canonicalize_path_allow_missing(path: &Path) -> anyhow::Result<PathBuf> {
 
     while !existing.exists() {
         let component = existing.file_name().ok_or_else(|| {
-            anyhow::anyhow!("failed to resolve output path ancestor for {}", path.display())
+            anyhow::anyhow!(
+                "failed to resolve output path ancestor for {}",
+                path.display()
+            )
         })?;
         missing_tail.push(component.to_os_string());
         existing = existing.parent().ok_or_else(|| {
-            anyhow::anyhow!("failed to resolve output path ancestor for {}", path.display())
+            anyhow::anyhow!(
+                "failed to resolve output path ancestor for {}",
+                path.display()
+            )
         })?;
     }
 
-    let mut resolved = fs::canonicalize(existing)
-        .with_context(|| format!("failed to canonicalize output path ancestor {}", existing.display()))?;
+    let mut resolved = fs::canonicalize(existing).with_context(|| {
+        format!(
+            "failed to canonicalize output path ancestor {}",
+            existing.display()
+        )
+    })?;
     for component in missing_tail.iter().rev() {
         resolved.push(component);
     }
@@ -146,7 +170,10 @@ fn count_regular_files_recursive(root: &Path) -> anyhow::Result<usize> {
             .with_context(|| format!("failed to read inventory directory {}", dir.display()))?;
         for entry in entries {
             let entry = entry.with_context(|| {
-                format!("failed to read entry in inventory directory {}", dir.display())
+                format!(
+                    "failed to read entry in inventory directory {}",
+                    dir.display()
+                )
             })?;
             let file_type = entry.file_type().with_context(|| {
                 format!(
