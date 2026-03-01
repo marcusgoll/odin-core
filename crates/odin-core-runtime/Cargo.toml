@@ -11,5 +11,6 @@ serde_yml.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 odin-audit = { path = "../odin-audit" }
+odin-governance = { path = "../odin-governance" }
 odin-plugin-protocol = { path = "../odin-plugin-protocol" }
 odin-policy-engine = { path = "../odin-policy-engine" }

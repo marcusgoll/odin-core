@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://odin-core.dev/schemas/skill-registry.v1.schema.json",
+  "title": "Odin Skill Registry v1",
+  "type": "object",
+  "required": ["schema_version", "scope"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "scope": {
+      "type": "string",
+      "enum": ["global", "project", "user"]
+    },
+    "skills": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/skill_record"
+      }
+    }
+  },
+  "$defs": {
+    "skill_record": {
+      "type": "object",
+      "required": ["name", "trust_level", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trust_level": {
+          "type": "string",
+          "enum": ["trusted", "caution", "untrusted"]
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pinned_version": {
+          "type": ["string", "null"]
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "https://odin-core.dev/schemas/capability-manifest.v1.schema.json#/$defs/delegation_capability"
+          },
+          "default": []
+        }
+      }
+    }
+  }
+}

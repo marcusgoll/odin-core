@@ -22,6 +22,7 @@ bash scripts/verify/compat-regression.sh --legacy-root /home/orchestrator/cfipro
 bash scripts/verify/quickstart-smoke.sh
 bash scripts/verify/tui-core-smoke.sh
 bash scripts/verify/plugin-install-matrix.sh
+bash scripts/verify/skill-plugin-governance-smoke.sh
 ```
 
 ## Quickstart Gate
@@ -39,6 +40,23 @@ bash scripts/verify/plugin-install-matrix.sh
   - required signature missing -> blocked
   - minisign signature path -> accepted (tool-dependent)
   - sigstore/cosign signature path -> accepted (tool-dependent)
+
+## Skill + Plugin Governance Smoke Gate
+
+- `scripts/verify/skill-plugin-governance-smoke.sh` is required for release readiness.
+- Verifies:
+  - untrusted skill install without ack is blocked
+  - stagehand enable without domains/workspaces is blocked
+  - capability missing from manifest is blocked
+  - manifest-granted capability executes
+
+## Governance Evidence Requirements
+
+Before claiming governance flows are working, release notes/evidence must include:
+
+1. command lines used for install/enable/delegation checks
+2. JSON outputs showing blocked/allowed statuses and error codes
+3. audit evidence for delegation outcomes (`governance.manifest.denied|validated`, `governance.capability.used`)
 
 ## SemVer Compatibility Promise (current)
 

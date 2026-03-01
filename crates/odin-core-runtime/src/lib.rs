@@ -7,9 +7,14 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use odin_audit::{AuditError, AuditRecord, AuditSink};
+use odin_governance::plugins::{
+    stagehand_policy_from_envelope, Action as StagehandAction,
+    PermissionDecision as StagehandPermissionDecision,
+};
 use odin_plugin_protocol::{
-    ActionOutcome, ActionRequest, ActionStatus, CapabilityRequest, EventEnvelope, PluginManifest,
-    PolicyDecision, RiskTier,
+    ActionOutcome, ActionRequest, ActionStatus, CapabilityManifest, CapabilityRequest,
+    DelegationCapability, EventEnvelope, PluginManifest, PluginPermissionEnvelope, PolicyDecision,
+    RiskTier, TrustLevel,
 };
 use odin_policy_engine::{PolicyEngine, PolicyError};
 use serde::{Deserialize, Serialize};
@@ -330,6 +335,74 @@ where
         }
     }
 
+    pub fn handle_action_with_manifest(
+        &self,
+        request: ActionRequest,
+        manifest: &CapabilityManifest,
+    ) -> RuntimeResult<ActionOutcome> {
+        validate_capability(&request.capability)?;
+        let manifest_denial = if manifest.schema_version != 1 {
+            Some("manifest_schema_version_unsupported".to_string())
+        } else {
+            manifest_denial_reason(&request, manifest)
+        };
+        if let Some(reason_code) = manifest_denial {
+            self.audit.record(AuditRecord {
+                ts_unix: now_unix(),
+                event_type: "governance.manifest.denied".to_string(),
+                request_id: Some(request.request_id.clone()),
+                task_id: None,
+                project: Some(request.capability.project.clone()),
+                metadata: serde_json::json!({
+                    "plugin": request.capability.plugin,
+                    "manifest_plugin": manifest.plugin,
+                    "capability": request.capability.capability,
+                    "reason_code": reason_code
+                }),
+            })?;
+            return Ok(ActionOutcome {
+                request_id: request.request_id,
+                status: ActionStatus::Blocked,
+                detail: reason_code,
+                output: Value::Null,
+            });
+        }
+
+        self.audit.record(AuditRecord {
+            ts_unix: now_unix(),
+            event_type: "governance.manifest.validated".to_string(),
+            request_id: Some(request.request_id.clone()),
+            task_id: None,
+            project: Some(request.capability.project.clone()),
+            metadata: serde_json::json!({
+                "plugin": request.capability.plugin,
+                "manifest_plugin": manifest.plugin,
+                "capability": request.capability.capability
+            }),
+        })?;
+
+        let request_id = request.request_id.clone();
+        let project = request.capability.project.clone();
+        let plugin = request.capability.plugin.clone();
+        let capability = request.capability.capability.clone();
+        let outcome = self.handle_action(request)?;
+        if outcome.status == ActionStatus::Executed {
+            self.audit.record(AuditRecord {
+                ts_unix: now_unix(),
+                event_type: "governance.capability.used".to_string(),
+                request_id: Some(request_id),
+                task_id: None,
+                project: Some(project),
+                metadata: serde_json::json!({
+                    "plugin": plugin,
+                    "capability": capability
+                }),
+            })?;
+        }
+
+        Ok(outcome)
+    }
+
     pub fn handle_watchdog_task<R, T>(
         &self,
         raw_task: &str,
@@ -384,7 +457,15 @@ where
                         },
                         input,
                     };
-                    outcomes.push(self.handle_action(request)?);
+                    let manifest = CapabilityManifest {
+                        schema_version: 1,
+                        plugin: request.capability.plugin.clone(),
+                        capabilities: vec![DelegationCapability {
+                            id: request.capability.capability.clone(),
+                            scope: request.capability.scope.clone(),
+                        }],
+                    };
+                    outcomes.push(self.handle_action_with_manifest(request, &manifest)?);
                 }
                 PluginDirective::EnqueueTask {
                     task_type,
@@ -579,6 +660,126 @@ fn validate_capability(capability: &CapabilityRequest) -> RuntimeResult<()> {
     Ok(())
 }
 
+fn manifest_denial_reason(
+    request: &ActionRequest,
+    manifest: &CapabilityManifest,
+) -> Option<String> {
+    if manifest.plugin != request.capability.plugin {
+        return Some("manifest_plugin_mismatch".to_string());
+    }
+
+    let matching_capabilities = manifest
+        .capabilities
+        .iter()
+        .filter(|capability| capability.id == request.capability.capability)
+        .collect::<Vec<_>>();
+    if matching_capabilities.is_empty() {
+        return Some("manifest_capability_not_granted".to_string());
+    }
+    if !matching_capabilities
+        .iter()
+        .any(|granted| manifest_scope_permits(&request.capability.scope, &granted.scope))
+    {
+        return Some("manifest_scope_not_granted".to_string());
+    }
+
+    let capability = request.capability.capability.as_str();
+    if is_stagehand_capability(capability) && request.capability.plugin != "stagehand" {
+        return Some("plugin_permission_denied".to_string());
+    }
+
+    stagehand_permission_denial(capability, &request.input, manifest)
+}
+
+fn stagehand_permission_denial(
+    capability: &str,
+    input: &Value,
+    manifest: &CapabilityManifest,
+) -> Option<String> {
+    if manifest.plugin != "stagehand" {
+        return None;
+    }
+
+    let action = match stagehand_action_from_capability(capability, input) {
+        Some(action) => action,
+        None if capability.starts_with("stagehand.") => {
+            return Some("manifest_stagehand_capability_unknown".to_string())
+        }
+        None => return None,
+    };
+    let policy = stagehand_policy_from_envelope(&PluginPermissionEnvelope {
+        plugin: manifest.plugin.clone(),
+        trust_level: TrustLevel::Caution,
+        permissions: manifest.capabilities.clone(),
+    });
+    match policy.evaluate(action) {
+        StagehandPermissionDecision::Allow { .. } => None,
+        StagehandPermissionDecision::Deny { reason_code } => Some(reason_code),
+    }
+}
+
+fn stagehand_action_from_capability(capability: &str, input: &Value) -> Option<StagehandAction> {
+    match capability {
+        "browser.observe" | "stagehand.observe_url" => Some(StagehandAction::ObserveUrl(
+            input_string(input, "url").unwrap_or_default(),
+        )),
+        "stagehand.observe_domain" => Some(StagehandAction::ObserveUrl(
+            canonical_observe_domain_input(input),
+        )),
+        "workspace.read" | "stagehand.workspace.read" => Some(StagehandAction::ReadWorkspace(
+            input_string(input, "workspace").unwrap_or_default(),
+        )),
+        "command.run" | "stagehand.command.run" => Some(StagehandAction::RunCommand(
+            input_string(input, "command").unwrap_or_default(),
+        )),
+        "stagehand.login" => Some(StagehandAction::Login),
+        "stagehand.payment" => Some(StagehandAction::Payment),
+        "stagehand.pii_submit" => Some(StagehandAction::PiiSubmit),
+        "stagehand.file_upload" => Some(StagehandAction::FileUpload),
+        _ => None,
+    }
+}
+
+fn canonical_observe_domain_input(input: &Value) -> String {
+    let value = input_string(input, "domain")
+        .or_else(|| input_string(input, "url"))
+        .unwrap_or_default();
+    let trimmed = value.trim();
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else if trimmed.is_empty() {
+        String::new()
+    } else {
+        format!("https://{trimmed}")
+    }
+}
+
+fn is_stagehand_capability(capability: &str) -> bool {
+    matches!(
+        capability,
+        "browser.observe" | "workspace.read" | "command.run"
+    ) || capability.starts_with("stagehand.")
+}
+
+fn input_string(input: &Value, key: &str) -> Option<String> {
+    input
+        .get(key)
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+}
+
+fn manifest_scope_permits(requested_scope: &[String], granted_scope: &[String]) -> bool {
+    if requested_scope.is_empty() {
+        return granted_scope.is_empty();
+    }
+    if granted_scope.is_empty() {
+        return false;
+    }
+    requested_scope
+        .iter()
+        .all(|requested| granted_scope.iter().any(|granted| granted == requested))
+}
+
 fn now_unix() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -596,7 +797,7 @@ fn decision_tag(decision: &PolicyDecision) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     use odin_audit::{AuditRecord, AuditSink};
     use odin_plugin_protocol::{ActionRequest, CapabilityRequest, RiskTier};
@@ -607,8 +808,18 @@ mod tests {
         PluginEventRunner, RuntimeError, TaskIngress,
     };
 
-    #[derive(Default)]
-    struct MemoryAuditSink(Mutex<Vec<AuditRecord>>);
+    #[derive(Clone, Default)]
+    struct MemoryAuditSink(Arc<Mutex<Vec<AuditRecord>>>);
+
+    impl MemoryAuditSink {
+        fn has_event(&self, event_type: &str) -> bool {
+            self.0
+                .lock()
+                .expect("lock")
+                .iter()
+                .any(|record| record.event_type == event_type)
+        }
+    }
 
     impl AuditSink for MemoryAuditSink {
         fn record(&self, record: AuditRecord) -> Result<(), odin_audit::AuditError> {
@@ -717,8 +928,8 @@ mod tests {
         let mut policy = StaticPolicyEngine::default();
         policy.allow_capability("private.ops-watchdog", "private", "monitoring.sentry.read");
 
-        let runtime =
-            OrchestratorRuntime::new(policy, MemoryAuditSink::default(), super::DryRunExecutor);
+        let audit = MemoryAuditSink::default();
+        let runtime = OrchestratorRuntime::new(policy, audit.clone(), super::DryRunExecutor);
         let ingress = MemoryIngress::default();
         let runner = StubRunner {
             directives: vec![PluginDirective::RequestCapability {
@@ -747,6 +958,7 @@ mod tests {
                 .and_then(|v| v.as_str()),
             Some("monitoring.sentry.read")
         );
+        assert!(audit.has_event("governance.manifest.validated"));
     }
 
     #[test]

@@ -2,6 +2,7 @@
 members = [
   "bin/odin-cli",
   "crates/odin-core-runtime",
+  "crates/odin-governance",
   "crates/odin-policy-engine",
   "crates/odin-plugin-manager",
   "crates/odin-plugin-protocol",
