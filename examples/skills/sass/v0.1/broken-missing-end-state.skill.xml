@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<skill skill_id="broken_missing_end_state" version="0.1">
+  <permissions>
+    <permission>read_repo</permission>
+  </permissions>
+  <wake_up state="collect_context" />
+  <states initial_state="collect_context">
+    <state id="collect_context" on_failure="collect_context">
+      <transition event="context_ready" target="collect_context" />
+    </state>
+  </states>
+</skill>
