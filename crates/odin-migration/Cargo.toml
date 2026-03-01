@@ -1,0 +1,13 @@
+[package]
+name = "odin-migration"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+serde.workspace = true
+sha2 = "0.10"
+
+[dev-dependencies]
+serde_json.workspace = true

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://odin-core.dev/schemas/user-data-model.v1.schema.json",
+  "title": "Odin User Data Model v1 Manifest",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "user_data_model_version",
+    "skills",
+    "learnings",
+    "runtime",
+    "checkpoints",
+    "events"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "user_data_model_version": {
+      "const": 1
+    },
+    "skills": {
+      "type": "object"
+    },
+    "learnings": {
+      "type": "object"
+    },
+    "runtime": {
+      "type": "object"
+    },
+    "checkpoints": {
+      "type": "object"
+    },
+    "events": {
+      "type": "object"
+    },
+    "opaque": {
+      "type": "object"
+    },
+    "quarantine": {
+      "type": "object"
+    },
+    "meta": {
+      "type": "object"
+    }
+  }
+}
