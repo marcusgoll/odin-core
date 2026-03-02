@@ -602,6 +602,10 @@ odin_bootstrap_cmd_connect() {
 odin_bootstrap_cmd_start() {
   if pgrep -f 'odin-dispatch\.sh' >/dev/null 2>&1; then
     odin_bootstrap_info "Odin already running"
+    if odin_bootstrap_has_dry_run "$@"; then
+      odin_bootstrap_info "DRY-RUN start (would launch TUI)"
+      return 0
+    fi
     exec bash "${ODIN_BOOTSTRAP_LIB_DIR}/../odin-tui" --live
   fi
 

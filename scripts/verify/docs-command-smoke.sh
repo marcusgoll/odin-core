@@ -280,11 +280,15 @@ expect_success \
   "DRY-RUN inbox add title=n8n bootstrap task" \
   run_wrapper scripts/odin/odin inbox add "n8n bootstrap task" --dry-run
 
-expect_failure \
-  "guardrails missing blocks mutating start" \
-  2 \
-  "BLOCKED start: guardrails file not found" \
-  run_wrapper scripts/odin/odin start
+if pgrep -f 'odin-dispatch\.sh' >/dev/null 2>&1; then
+  echo "[docs-command] SKIP guardrails missing blocks mutating start (dispatch running — start launches TUI)"
+else
+  expect_failure \
+    "guardrails missing blocks mutating start" \
+    2 \
+    "BLOCKED start: guardrails file not found" \
+    run_wrapper scripts/odin/odin start
+fi
 
 expect_success \
   "guardrails missing smallest fix is --dry-run" \

@@ -60,11 +60,7 @@ expect_blocked() {
 
 run scripts/odin/odin help
 run env ODIN_GUARDRAILS_PATH="${MISSING_GUARDRAILS_PATH}" scripts/odin/odin connect claude oauth --dry-run
-if pgrep -f 'odin-dispatch\.sh' >/dev/null 2>&1; then
-  echo "[bootstrap-wrapper] SKIP start --dry-run (dispatch running — start launches TUI)"
-else
-  run env ODIN_GUARDRAILS_PATH="${MISSING_GUARDRAILS_PATH}" scripts/odin/odin start --dry-run
-fi
+run env ODIN_GUARDRAILS_PATH="${MISSING_GUARDRAILS_PATH}" scripts/odin/odin start --dry-run
 run env ODIN_GUARDRAILS_PATH="${MISSING_GUARDRAILS_PATH}" scripts/odin/odin tui --dry-run
 run env ODIN_GUARDRAILS_PATH="${MISSING_GUARDRAILS_PATH}" scripts/odin/odin inbox add "test task" --dry-run
 run env ODIN_GUARDRAILS_PATH="${MISSING_GUARDRAILS_PATH}" scripts/odin/odin inbox list
