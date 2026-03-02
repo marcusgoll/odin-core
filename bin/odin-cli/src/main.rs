@@ -653,51 +653,47 @@ fn handle_bootstrap_command(command: CliCommand) -> anyhow::Result<()> {
             }
         }
         CliCommand::Skill { command } => handle_skill_command(command),
-        CliCommand::Migrate { command } => {
-            match command {
-                MigrateSubcommand::Export {
+        CliCommand::Migrate { command } => match command {
+            MigrateSubcommand::Export {
+                source_root,
+                odin_dir,
+                out_dir,
+            } => {
+                let source_root = match source_root {
+                    Some(p) => p,
+                    None => {
+                        eprintln!("missing required flag: --source-root");
+                        process::exit(1);
+                    }
+                };
+                odin_migration::run(odin_migration::MigrationCommand::Export {
                     source_root,
                     odin_dir,
                     out_dir,
-                } => {
-                    let source_root = match source_root {
-                        Some(p) => p,
-                        None => {
-                            eprintln!("missing required flag: --source-root");
-                            process::exit(1);
-                        }
-                    };
-                    odin_migration::run(odin_migration::MigrationCommand::Export {
-                        source_root,
-                        odin_dir,
-                        out_dir,
-                    })
-                }
-                MigrateSubcommand::Validate { bundle } => {
-                    let bundle_dir = match bundle {
-                        Some(p) => p,
-                        None => {
-                            eprintln!("missing required flag: --bundle");
-                            process::exit(1);
-                        }
-                    };
-                    odin_migration::run(odin_migration::MigrationCommand::Validate {
-                        bundle_dir,
-                    })
-                }
-                MigrateSubcommand::Import => {
-                    odin_migration::run(odin_migration::MigrationCommand::Import)
-                }
-                MigrateSubcommand::Unknown(args) => {
-                    let name = args
-                        .first()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_default();
-                    eprintln!("unknown migrate subcommand: {name}");
-                    process::exit(1);
-                }
+                })
             }
-        }
+            MigrateSubcommand::Validate { bundle } => {
+                let bundle_dir = match bundle {
+                    Some(p) => p,
+                    None => {
+                        eprintln!("missing required flag: --bundle");
+                        process::exit(1);
+                    }
+                };
+                odin_migration::run(odin_migration::MigrationCommand::Validate { bundle_dir })
+            }
+            MigrateSubcommand::Import => {
+                odin_migration::run(odin_migration::MigrationCommand::Import)
+            }
+            MigrateSubcommand::Unknown(args) => {
+                let name = args
+                    .first()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                eprintln!("unknown migrate subcommand: {name}");
+                process::exit(1);
+            }
+        },
     }
 }
 
