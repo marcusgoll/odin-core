@@ -24,6 +24,15 @@ Usage:
   odin [--guardrails <path>] inbox list
   odin [--guardrails <path>] gateway add <cli|slack|telegram> [--dry-run] [--confirm]
   odin [--guardrails <path>] verify [--dry-run]
+
+Operations:
+  odin status                Show dispatch loop and agent session status
+  odin stop                  Stop dispatch loop and agent sessions
+  odin restart               Stop and restart odin.service via systemctl
+  odin logs                  Tail today's dispatch log
+  odin agents                List active agent tmux sessions
+  odin send                  Send JSON task from stdin to inbox
+  odin test                  Run verify smoke tests
 EOF
 }
 
@@ -802,6 +811,155 @@ odin_bootstrap_cmd_verify() {
   fi
 }
 
+odin_bootstrap_cmd_status() {
+  local odin_dir="${ODIN_DIR:-/var/odin}"
+  local pid
+  pid="$(pgrep -f 'odin-dispatch\.sh' 2>/dev/null || true)"
+
+  if [[ -n "${pid}" ]]; then
+    odin_bootstrap_info "dispatch loop RUNNING (pid=${pid})"
+  else
+    odin_bootstrap_info "dispatch loop STOPPED"
+  fi
+
+  local heartbeat_file="${odin_dir}/heartbeat"
+  if [[ -f "${heartbeat_file}" ]]; then
+    local heartbeat
+    heartbeat="$(cat "${heartbeat_file}" 2>/dev/null || true)"
+    odin_bootstrap_info "heartbeat: ${heartbeat:-unknown}"
+  else
+    odin_bootstrap_info "heartbeat: no file"
+  fi
+
+  local sessions
+  sessions="$(tmux list-sessions 2>/dev/null | grep '^odin-' || true)"
+  if [[ -n "${sessions}" ]]; then
+    odin_bootstrap_info "agent sessions:"
+    while IFS= read -r line; do
+      odin_bootstrap_info "  ${line}"
+    done <<< "${sessions}"
+  else
+    odin_bootstrap_info "agent sessions: (none)"
+  fi
+}
+
+odin_bootstrap_cmd_stop() {
+  local pid
+  pid="$(pgrep -f 'odin-dispatch\.sh' 2>/dev/null || true)"
+
+  if [[ -z "${pid}" ]]; then
+    odin_bootstrap_info "dispatch loop not running"
+  else
+    odin_bootstrap_info "stopping dispatch loop (pid=${pid})..."
+    kill "${pid}" 2>/dev/null || true
+    local waited=0
+    while kill -0 "${pid}" 2>/dev/null && [[ "${waited}" -lt 5 ]]; do
+      sleep 1
+      waited=$((waited + 1))
+    done
+    if kill -0 "${pid}" 2>/dev/null; then
+      odin_bootstrap_info "SIGKILL dispatch loop (pid=${pid})"
+      kill -9 "${pid}" 2>/dev/null || true
+    fi
+    odin_bootstrap_info "dispatch loop stopped"
+  fi
+
+  local sessions
+  sessions="$(tmux list-sessions 2>/dev/null | grep '^odin-' | cut -d: -f1 || true)"
+  if [[ -n "${sessions}" ]]; then
+    while IFS= read -r sess; do
+      odin_bootstrap_info "killing tmux session: ${sess}"
+      tmux kill-session -t "${sess}" 2>/dev/null || true
+    done <<< "${sessions}"
+  fi
+}
+
+odin_bootstrap_cmd_restart() {
+  odin_bootstrap_cmd_stop
+  sleep 1
+  odin_bootstrap_info "restarting odin.service..."
+  sudo systemctl restart odin.service
+  odin_bootstrap_info "odin.service restarted"
+}
+
+odin_bootstrap_cmd_logs() {
+  local odin_dir="${ODIN_DIR:-/var/odin}"
+  local log_file="${odin_dir}/logs/$(date +%Y-%m-%d)/dispatch.log"
+  if [[ ! -f "${log_file}" ]]; then
+    odin_bootstrap_err "log file not found: ${log_file}"
+    return 1
+  fi
+  exec tail -f "${log_file}"
+}
+
+odin_bootstrap_cmd_agents() {
+  local sessions
+  sessions="$(tmux list-sessions 2>/dev/null | grep '^odin-' || true)"
+  if [[ -n "${sessions}" ]]; then
+    echo "${sessions}"
+  else
+    odin_bootstrap_info "(no agent sessions)"
+  fi
+}
+
+odin_bootstrap_cmd_send() {
+  local odin_dir="${ODIN_DIR:-/var/odin}"
+  local inbox_dir="${odin_dir}/inbox"
+
+  if [[ -t 0 ]]; then
+    odin_bootstrap_err "send: expected JSON on stdin"
+    return 64
+  fi
+
+  local payload
+  payload="$(cat)"
+
+  if [[ -z "${payload}" ]]; then
+    odin_bootstrap_err "send: empty input"
+    return 64
+  fi
+
+  if command -v jq >/dev/null 2>&1; then
+    if ! echo "${payload}" | jq empty 2>/dev/null; then
+      odin_bootstrap_err "send: invalid JSON"
+      return 65
+    fi
+  fi
+
+  mkdir -p "${inbox_dir}"
+  local filename="manual-$(date +%s)-$$.json"
+  local tmp_file="${inbox_dir}/.${filename}.tmp"
+  printf '%s\n' "${payload}" > "${tmp_file}"
+  mv "${tmp_file}" "${inbox_dir}/${filename}"
+  odin_bootstrap_info "sent → ${inbox_dir}/${filename}"
+}
+
+odin_bootstrap_cmd_test() {
+  local script_dir="${ODIN_BOOTSTRAP_ROOT_DIR}/scripts/verify"
+  local failed=0
+
+  for test_script in quickstart-smoke.sh bootstrap-wrapper-smoke.sh; do
+    local path="${script_dir}/${test_script}"
+    if [[ ! -f "${path}" ]]; then
+      odin_bootstrap_info "SKIP ${test_script} (not found)"
+      continue
+    fi
+    odin_bootstrap_info "RUN ${test_script}"
+    if bash "${path}"; then
+      odin_bootstrap_info "PASS ${test_script}"
+    else
+      odin_bootstrap_err "FAIL ${test_script}"
+      failed=$((failed + 1))
+    fi
+  done
+
+  if [[ "${failed}" -gt 0 ]]; then
+    odin_bootstrap_err "${failed} test(s) failed"
+    return 1
+  fi
+  odin_bootstrap_info "all tests passed"
+}
+
 odin_bootstrap_dispatch() {
   ODIN_BOOTSTRAP_GUARDRAILS_OVERRIDE=""
   while [[ $# -gt 0 ]]; do
@@ -910,6 +1068,27 @@ odin_bootstrap_dispatch() {
     verify)
       shift
       odin_bootstrap_cmd_verify "$@"
+      ;;
+    status)
+      odin_bootstrap_cmd_status
+      ;;
+    stop)
+      odin_bootstrap_cmd_stop
+      ;;
+    restart)
+      odin_bootstrap_cmd_restart
+      ;;
+    logs)
+      odin_bootstrap_cmd_logs
+      ;;
+    agents)
+      odin_bootstrap_cmd_agents
+      ;;
+    send)
+      odin_bootstrap_cmd_send
+      ;;
+    test)
+      odin_bootstrap_cmd_test
       ;;
     *)
       odin_bootstrap_err "unknown command: ${command}"
