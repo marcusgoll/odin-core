@@ -132,12 +132,8 @@ enum GatewayCommand {
 
 #[derive(Clone, Debug, Subcommand)]
 enum SkillCommand {
-    Validate {
-        file: PathBuf,
-    },
-    Mermaid {
-        file: PathBuf,
-    },
+    Validate { file: PathBuf },
+    Mermaid { file: PathBuf },
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -385,10 +381,7 @@ fn parse_sass_skill(path: &Path) -> anyhow::Result<SassSkill> {
     let mut states = Vec::new();
     if let Some(states_elem) = &states_elem {
         for state_node in states_elem.children().filter(|n| n.has_tag_name("state")) {
-            let id = state_node
-                .attribute("id")
-                .unwrap_or_default()
-                .to_string();
+            let id = state_node.attribute("id").unwrap_or_default().to_string();
             let is_end = state_node.attribute("end") == Some("true");
             let on_failure = state_node.attribute("on_failure").map(String::from);
 
@@ -490,9 +483,7 @@ fn validate_sass_skill(skill: &SassSkill) -> Vec<String> {
 
     // Check wake_up state exists
     if !state_ids.contains(wake_up.as_str()) {
-        errors.push(format!(
-            "wake_up references unknown state '{wake_up}'"
-        ));
+        errors.push(format!("wake_up references unknown state '{wake_up}'"));
     }
 
     errors
