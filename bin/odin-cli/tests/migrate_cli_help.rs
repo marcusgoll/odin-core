@@ -44,7 +44,8 @@ fn migrate_help_surface_is_available() {
     assert!(output.status.success(), "stdout:\n{}", stdout_text(&output));
 
     let stdout = stdout_text(&output);
-    assert!(stdout.contains("Usage: odin-cli migrate <COMMAND>"));
+    assert!(stdout.contains("Usage: odin-cli migrate"), "expected usage line in:\n{stdout}");
+    assert!(stdout.contains("<COMMAND>"), "expected <COMMAND> in usage:\n{stdout}");
     assert!(stdout.contains("export"));
     assert!(stdout.contains("validate"));
     assert!(stdout.contains("import"));

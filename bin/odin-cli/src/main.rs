@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::env;
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
@@ -101,6 +102,11 @@ enum CliCommand {
         #[command(subcommand)]
         command: SkillCommand,
     },
+    /// Orchestrator-to-core migration tools
+    Migrate {
+        #[command(subcommand)]
+        command: MigrateSubcommand,
+    },
 }
 
 #[derive(Clone, Debug, Subcommand)]
@@ -134,6 +140,28 @@ enum GatewayCommand {
 enum SkillCommand {
     Validate { file: PathBuf },
     Mermaid { file: PathBuf },
+}
+
+#[derive(Clone, Debug, Subcommand)]
+enum MigrateSubcommand {
+    /// Export a migration bundle from the orchestrator
+    Export {
+        #[arg(long)]
+        source_root: Option<PathBuf>,
+        #[arg(long, default_value = "/var/odin")]
+        odin_dir: PathBuf,
+        #[arg(long, default_value = "migration-bundle")]
+        out_dir: PathBuf,
+    },
+    /// Validate a migration bundle
+    Validate {
+        #[arg(long)]
+        bundle: Option<PathBuf>,
+    },
+    /// Import a migration bundle into odin-core
+    Import,
+    #[command(external_subcommand)]
+    Unknown(Vec<OsString>),
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -323,14 +351,14 @@ fn parse_error_targets_native_contract(raw_args: &[String]) -> bool {
 
         return matches!(
             arg,
-            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify" | "skill"
+            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify" | "skill" | "migrate"
         );
     }
 
     if let Some(token) = raw_args.get(idx).map(String::as_str) {
         return matches!(
             token,
-            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify" | "skill"
+            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify" | "skill" | "migrate"
         );
     }
 
@@ -625,6 +653,51 @@ fn handle_bootstrap_command(command: CliCommand) -> anyhow::Result<()> {
             }
         }
         CliCommand::Skill { command } => handle_skill_command(command),
+        CliCommand::Migrate { command } => {
+            match command {
+                MigrateSubcommand::Export {
+                    source_root,
+                    odin_dir,
+                    out_dir,
+                } => {
+                    let source_root = match source_root {
+                        Some(p) => p,
+                        None => {
+                            eprintln!("missing required flag: --source-root");
+                            process::exit(1);
+                        }
+                    };
+                    odin_migration::run(odin_migration::MigrationCommand::Export {
+                        source_root,
+                        odin_dir,
+                        out_dir,
+                    })
+                }
+                MigrateSubcommand::Validate { bundle } => {
+                    let bundle_dir = match bundle {
+                        Some(p) => p,
+                        None => {
+                            eprintln!("missing required flag: --bundle");
+                            process::exit(1);
+                        }
+                    };
+                    odin_migration::run(odin_migration::MigrationCommand::Validate {
+                        bundle_dir,
+                    })
+                }
+                MigrateSubcommand::Import => {
+                    odin_migration::run(odin_migration::MigrationCommand::Import)
+                }
+                MigrateSubcommand::Unknown(args) => {
+                    let name = args
+                        .first()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    eprintln!("unknown migrate subcommand: {name}");
+                    process::exit(1);
+                }
+            }
+        }
     }
 }
 
