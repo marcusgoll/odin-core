@@ -1,6 +1,8 @@
+use std::collections::HashSet;
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process;
 use std::thread;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -95,6 +97,10 @@ enum CliCommand {
         #[arg(long)]
         dry_run: bool,
     },
+    Skill {
+        #[command(subcommand)]
+        command: SkillCommand,
+    },
 }
 
 #[derive(Clone, Debug, Subcommand)]
@@ -121,6 +127,16 @@ enum GatewayCommand {
         dry_run: bool,
         #[arg(long)]
         confirm: bool,
+    },
+}
+
+#[derive(Clone, Debug, Subcommand)]
+enum SkillCommand {
+    Validate {
+        file: PathBuf,
+    },
+    Mermaid {
+        file: PathBuf,
     },
 }
 
@@ -311,18 +327,223 @@ fn parse_error_targets_native_contract(raw_args: &[String]) -> bool {
 
         return matches!(
             arg,
-            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify"
+            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify" | "skill"
         );
     }
 
     if let Some(token) = raw_args.get(idx).map(String::as_str) {
         return matches!(
             token,
-            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify"
+            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify" | "skill"
         );
     }
 
     false
+}
+
+// ---------------------------------------------------------------------------
+// SASS skill XML parsing, validation, and mermaid generation
+// ---------------------------------------------------------------------------
+
+struct SassTransition {
+    target: String,
+    has_guard: bool,
+}
+
+struct SassState {
+    id: String,
+    is_end: bool,
+    on_failure: Option<String>,
+    transitions: Vec<SassTransition>,
+}
+
+struct SassSkill {
+    wake_up_state: Option<String>,
+    initial_state: Option<String>,
+    states: Vec<SassState>,
+}
+
+fn parse_sass_skill(path: &Path) -> anyhow::Result<SassSkill> {
+    let xml = fs::read_to_string(path)
+        .with_context(|| format!("failed to read skill file: {}", path.display()))?;
+    let doc = roxmltree::Document::parse(&xml)
+        .with_context(|| format!("failed to parse XML: {}", path.display()))?;
+
+    let root = doc.root_element();
+
+    let wake_up_state = root
+        .children()
+        .find(|n| n.has_tag_name("wake_up"))
+        .and_then(|n| n.attribute("state").map(String::from));
+
+    let states_elem = root.children().find(|n| n.has_tag_name("states"));
+
+    let initial_state = states_elem
+        .as_ref()
+        .and_then(|n| n.attribute("initial_state").map(String::from));
+
+    let mut states = Vec::new();
+    if let Some(states_elem) = &states_elem {
+        for state_node in states_elem.children().filter(|n| n.has_tag_name("state")) {
+            let id = state_node
+                .attribute("id")
+                .unwrap_or_default()
+                .to_string();
+            let is_end = state_node.attribute("end") == Some("true");
+            let on_failure = state_node.attribute("on_failure").map(String::from);
+
+            let transitions: Vec<SassTransition> = state_node
+                .children()
+                .filter(|n| n.has_tag_name("transition"))
+                .map(|t| {
+                    let target = t.attribute("target").unwrap_or_default().to_string();
+                    let has_guard = t.children().any(|c| c.has_tag_name("guard"));
+                    SassTransition { target, has_guard }
+                })
+                .collect();
+
+            states.push(SassState {
+                id,
+                is_end,
+                on_failure,
+                transitions,
+            });
+        }
+    }
+
+    Ok(SassSkill {
+        wake_up_state,
+        initial_state,
+        states,
+    })
+}
+
+fn validate_sass_skill(skill: &SassSkill) -> Vec<String> {
+    let mut errors = Vec::new();
+
+    // Rule 1: wake_up must exist
+    let wake_up = match &skill.wake_up_state {
+        Some(w) => w.clone(),
+        None => {
+            errors.push("wake_up element is required".to_string());
+            return errors;
+        }
+    };
+
+    // Rule 2: initial_state must exist and match wake_up
+    match &skill.initial_state {
+        Some(initial) => {
+            if *initial != wake_up {
+                errors.push(format!(
+                    "wake_up state '{wake_up}' does not match initial_state '{initial}'"
+                ));
+            }
+        }
+        None => {
+            errors.push("states element with initial_state attribute is required".to_string());
+        }
+    }
+
+    let state_ids: HashSet<&str> = skill.states.iter().map(|s| s.id.as_str()).collect();
+    // Rule 3: at least one end state
+    if !skill.states.iter().any(|s| s.is_end) {
+        errors.push("at least one end state is required".to_string());
+    }
+
+    for state in &skill.states {
+        // Rule 4: non-end states must have on_failure
+        if !state.is_end && state.on_failure.is_none() {
+            errors.push(format!(
+                "state '{}' missing on_failure (required for non-end states)",
+                state.id
+            ));
+        }
+
+        // Rule 4b: on_failure target must exist
+        if let Some(ref target) = state.on_failure {
+            if !state_ids.contains(target.as_str()) {
+                errors.push(format!(
+                    "state '{}' on_failure transitions to unknown target '{target}'",
+                    state.id
+                ));
+            }
+        }
+
+        // Rule 5: all transition targets must exist
+        for t in &state.transitions {
+            if !state_ids.contains(t.target.as_str()) {
+                errors.push(format!(
+                    "state '{}' transitions to unknown target '{}'",
+                    state.id, t.target
+                ));
+            }
+        }
+
+        // Rule 6: decision states (>1 transition) must guard every branch
+        if state.transitions.len() > 1 && state.transitions.iter().any(|t| !t.has_guard) {
+            errors.push(format!(
+                "state '{}' has decision transitions without guards",
+                state.id
+            ));
+        }
+    }
+
+    // Check wake_up state exists
+    if !state_ids.contains(wake_up.as_str()) {
+        errors.push(format!(
+            "wake_up references unknown state '{wake_up}'"
+        ));
+    }
+
+    errors
+}
+
+fn generate_mermaid(skill: &SassSkill) -> String {
+    let mut lines = Vec::new();
+    lines.push("stateDiagram-v2".to_string());
+
+    if let Some(ref wake_up) = skill.wake_up_state {
+        lines.push(format!("    %% wake_up: {wake_up}"));
+        lines.push(format!("    [*] --> {wake_up}"));
+    }
+
+    for state in &skill.states {
+        for t in &state.transitions {
+            lines.push(format!("    {} --> {}", state.id, t.target));
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn handle_skill_command(command: SkillCommand) -> anyhow::Result<()> {
+    match command {
+        SkillCommand::Validate { file } => {
+            let skill = parse_sass_skill(&file)?;
+            let errors = validate_sass_skill(&skill);
+            if errors.is_empty() {
+                println!("validation ok");
+                Ok(())
+            } else {
+                for err in &errors {
+                    eprintln!("validation failed: {err}");
+                }
+                process::exit(1);
+            }
+        }
+        SkillCommand::Mermaid { file } => {
+            let skill = parse_sass_skill(&file)?;
+            let errors = validate_sass_skill(&skill);
+            if !errors.is_empty() {
+                for err in &errors {
+                    eprintln!("validation failed: {err}");
+                }
+                process::exit(1);
+            }
+            println!("{}", generate_mermaid(&skill));
+            Ok(())
+        }
+    }
 }
 
 fn handle_bootstrap_command(command: CliCommand) -> anyhow::Result<()> {
@@ -412,6 +633,7 @@ fn handle_bootstrap_command(command: CliCommand) -> anyhow::Result<()> {
                 ))
             }
         }
+        CliCommand::Skill { command } => handle_skill_command(command),
     }
 }
 
