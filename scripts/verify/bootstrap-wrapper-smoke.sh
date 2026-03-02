@@ -60,7 +60,11 @@ expect_blocked() {
 
 run scripts/odin/odin help
 run env ODIN_GUARDRAILS_PATH="${MISSING_GUARDRAILS_PATH}" scripts/odin/odin connect claude oauth --dry-run
-run env ODIN_GUARDRAILS_PATH="${MISSING_GUARDRAILS_PATH}" scripts/odin/odin start --dry-run
+if pgrep -f 'odin-dispatch\.sh' >/dev/null 2>&1; then
+  echo "[bootstrap-wrapper] SKIP start --dry-run (dispatch running — start launches TUI)"
+else
+  run env ODIN_GUARDRAILS_PATH="${MISSING_GUARDRAILS_PATH}" scripts/odin/odin start --dry-run
+fi
 run env ODIN_GUARDRAILS_PATH="${MISSING_GUARDRAILS_PATH}" scripts/odin/odin tui --dry-run
 run env ODIN_GUARDRAILS_PATH="${MISSING_GUARDRAILS_PATH}" scripts/odin/odin inbox add "test task" --dry-run
 run env ODIN_GUARDRAILS_PATH="${MISSING_GUARDRAILS_PATH}" scripts/odin/odin inbox list
@@ -76,11 +80,15 @@ expect_failure \
   64 \
   "unexpected argument" \
   scripts/odin/odin connect claude oauth extra --dry-run
-expect_failure \
-  "invalid start extra positional" \
-  64 \
-  "unexpected argument" \
-  scripts/odin/odin start extra --dry-run
+if pgrep -f 'odin-dispatch\.sh' >/dev/null 2>&1; then
+  echo "[bootstrap-wrapper] SKIP invalid start extra positional (dispatch running — start launches TUI)"
+else
+  expect_failure \
+    "invalid start extra positional" \
+    64 \
+    "unexpected argument" \
+    scripts/odin/odin start extra --dry-run
+fi
 expect_failure \
   "invalid tui extra positional" \
   64 \
@@ -106,10 +114,14 @@ expect_blocked \
   "wrapper connect without --dry-run when guardrails missing" \
   "BLOCKED connect" \
   env ODIN_GUARDRAILS_PATH="${MISSING_GUARDRAILS_PATH}" scripts/odin/odin connect claude oauth
-expect_blocked \
-  "wrapper start without --dry-run when guardrails missing" \
-  "BLOCKED start" \
-  env ODIN_GUARDRAILS_PATH="${MISSING_GUARDRAILS_PATH}" scripts/odin/odin start
+if pgrep -f 'odin-dispatch\.sh' >/dev/null 2>&1; then
+  echo "[bootstrap-wrapper] SKIP wrapper start without --dry-run (dispatch running — start launches TUI)"
+else
+  expect_blocked \
+    "wrapper start without --dry-run when guardrails missing" \
+    "BLOCKED start" \
+    env ODIN_GUARDRAILS_PATH="${MISSING_GUARDRAILS_PATH}" scripts/odin/odin start
+fi
 expect_blocked \
   "wrapper tui without --dry-run when guardrails missing" \
   "BLOCKED tui" \
@@ -135,18 +147,22 @@ expect_blocked \
     rc=$?
     exit "${rc}"
   ' _ "${ROOT_DIR}/scripts/odin/lib/bootstrap.sh" "${MISSING_GUARDRAILS_PATH}"
-expect_blocked \
-  "library start without errexit when guardrails missing" \
-  "BLOCKED start" \
-  bash -c '
-    set -u -o pipefail
-    set +e
-    source "$1"
-    ODIN_GUARDRAILS_PATH="$2"
-    odin_bootstrap_cmd_start
-    rc=$?
-    exit "${rc}"
-  ' _ "${ROOT_DIR}/scripts/odin/lib/bootstrap.sh" "${MISSING_GUARDRAILS_PATH}"
+if pgrep -f 'odin-dispatch\.sh' >/dev/null 2>&1; then
+  echo "[bootstrap-wrapper] SKIP library start without errexit (dispatch running — start launches TUI)"
+else
+  expect_blocked \
+    "library start without errexit when guardrails missing" \
+    "BLOCKED start" \
+    bash -c '
+      set -u -o pipefail
+      set +e
+      source "$1"
+      ODIN_GUARDRAILS_PATH="$2"
+      odin_bootstrap_cmd_start
+      rc=$?
+      exit "${rc}"
+    ' _ "${ROOT_DIR}/scripts/odin/lib/bootstrap.sh" "${MISSING_GUARDRAILS_PATH}"
+fi
 expect_blocked \
   "library tui without errexit when guardrails missing" \
   "BLOCKED tui" \

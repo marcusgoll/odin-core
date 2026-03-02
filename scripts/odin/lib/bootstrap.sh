@@ -600,6 +600,11 @@ odin_bootstrap_cmd_connect() {
 }
 
 odin_bootstrap_cmd_start() {
+  if pgrep -f 'odin-dispatch\.sh' >/dev/null 2>&1; then
+    odin_bootstrap_info "Odin already running"
+    exec bash "${ODIN_BOOTSTRAP_LIB_DIR}/../odin-tui" --live
+  fi
+
   local args=("$@")
   if odin_bootstrap_validate_optional_dry_run_or_confirm "start" "${args[@]}"; then
     :
