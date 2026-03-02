@@ -813,11 +813,11 @@ odin_bootstrap_cmd_verify() {
 
 odin_bootstrap_cmd_status() {
   local odin_dir="${ODIN_DIR:-/var/odin}"
-  local pid
-  pid="$(pgrep -f 'odin-dispatch\.sh' 2>/dev/null || true)"
+  local pids
+  pids="$(pgrep -f 'odin-dispatch\.sh' 2>/dev/null || true)"
 
-  if [[ -n "${pid}" ]]; then
-    odin_bootstrap_info "dispatch loop RUNNING (pid=${pid})"
+  if [[ -n "${pids}" ]]; then
+    odin_bootstrap_info "dispatch loop RUNNING (pids: $(echo ${pids} | tr '\n' ' '))"
   else
     odin_bootstrap_info "dispatch loop STOPPED"
   fi
@@ -844,23 +844,37 @@ odin_bootstrap_cmd_status() {
 }
 
 odin_bootstrap_cmd_stop() {
-  local pid
-  pid="$(pgrep -f 'odin-dispatch\.sh' 2>/dev/null || true)"
+  local pids
+  pids="$(pgrep -f 'odin-dispatch\.sh' 2>/dev/null || true)"
 
-  if [[ -z "${pid}" ]]; then
+  if [[ -z "${pids}" ]]; then
     odin_bootstrap_info "dispatch loop not running"
   else
-    odin_bootstrap_info "stopping dispatch loop (pid=${pid})..."
-    kill "${pid}" 2>/dev/null || true
+    odin_bootstrap_info "stopping dispatch loop (pids: $(echo ${pids} | tr '\n' ' '))..."
+    local p
+    while IFS= read -r p; do
+      kill "${p}" 2>/dev/null || true
+    done <<< "${pids}"
     local waited=0
-    while kill -0 "${pid}" 2>/dev/null && [[ "${waited}" -lt 5 ]]; do
-      sleep 1
-      waited=$((waited + 1))
+    local still_running=true
+    while "${still_running}" && [[ "${waited}" -lt 5 ]]; do
+      still_running=false
+      while IFS= read -r p; do
+        if kill -0 "${p}" 2>/dev/null; then
+          still_running=true
+        fi
+      done <<< "${pids}"
+      if "${still_running}"; then
+        sleep 1
+        waited=$((waited + 1))
+      fi
     done
-    if kill -0 "${pid}" 2>/dev/null; then
-      odin_bootstrap_info "SIGKILL dispatch loop (pid=${pid})"
-      kill -9 "${pid}" 2>/dev/null || true
-    fi
+    while IFS= read -r p; do
+      if kill -0 "${p}" 2>/dev/null; then
+        odin_bootstrap_info "SIGKILL dispatch (pid=${p})"
+        kill -9 "${p}" 2>/dev/null || true
+      fi
+    done <<< "${pids}"
     odin_bootstrap_info "dispatch loop stopped"
   fi
 
@@ -878,7 +892,10 @@ odin_bootstrap_cmd_restart() {
   odin_bootstrap_cmd_stop
   sleep 1
   odin_bootstrap_info "restarting odin.service..."
-  sudo systemctl restart odin.service
+  if ! sudo systemctl restart odin.service; then
+    odin_bootstrap_err "systemctl restart odin.service failed"
+    return 1
+  fi
   odin_bootstrap_info "odin.service restarted"
 }
 
@@ -938,7 +955,7 @@ odin_bootstrap_cmd_test() {
   local script_dir="${ODIN_BOOTSTRAP_ROOT_DIR}/scripts/verify"
   local failed=0
 
-  for test_script in quickstart-smoke.sh bootstrap-wrapper-smoke.sh; do
+  for test_script in quickstart-smoke.sh bootstrap-wrapper-smoke.sh odin-ops-cli-smoke.sh; do
     local path="${script_dir}/${test_script}"
     if [[ ! -f "${path}" ]]; then
       odin_bootstrap_info "SKIP ${test_script} (not found)"
@@ -1069,26 +1086,14 @@ odin_bootstrap_dispatch() {
       shift
       odin_bootstrap_cmd_verify "$@"
       ;;
-    status)
-      odin_bootstrap_cmd_status
-      ;;
-    stop)
-      odin_bootstrap_cmd_stop
-      ;;
-    restart)
-      odin_bootstrap_cmd_restart
-      ;;
-    logs)
-      odin_bootstrap_cmd_logs
-      ;;
-    agents)
-      odin_bootstrap_cmd_agents
-      ;;
-    send)
-      odin_bootstrap_cmd_send
-      ;;
-    test)
-      odin_bootstrap_cmd_test
+    status|stop|restart|logs|agents|send|test)
+      local ops_cmd="${command}"
+      shift
+      if [[ $# -gt 0 && "${ops_cmd}" != "send" ]]; then
+        odin_bootstrap_err "${ops_cmd}: unexpected arguments"
+        return 64
+      fi
+      "odin_bootstrap_cmd_${ops_cmd}"
       ;;
     *)
       odin_bootstrap_err "unknown command: ${command}"

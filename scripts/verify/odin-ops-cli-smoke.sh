@@ -71,6 +71,30 @@ else
   fail "send accepted empty stdin (expected non-zero rc)"
 fi
 
+# --- send writes valid JSON to inbox ---
+test_inbox="$(mktemp -d /tmp/odin-ops-smoke-inbox.XXXXXX)"
+set +e
+echo '{"task":"smoke-test"}' | env ODIN_DIR="${test_inbox}" scripts/odin/odin send >/dev/null 2>&1
+rc=$?
+set -e
+if [[ "${rc}" -eq 0 ]] && ls "${test_inbox}/inbox/manual-"*.json >/dev/null 2>&1; then
+  pass "send writes JSON to inbox"
+else
+  fail "send did not write to inbox (rc=${rc})"
+fi
+rm -rf "${test_inbox}"
+
+# --- ops commands reject extra arguments ---
+set +e
+env ODIN_GUARDRAILS_PATH="${MISSING_GUARDRAILS_PATH}" scripts/odin/odin status --verbose >/dev/null 2>&1
+rc=$?
+set -e
+if [[ "${rc}" -eq 64 ]]; then
+  pass "status rejects extra args (rc=64)"
+else
+  fail "status accepted extra args (rc=${rc}, expected 64)"
+fi
+
 # --- summary ---
 echo ""
 echo "[ops-cli] ${PASS} passed, ${FAIL} failed"
