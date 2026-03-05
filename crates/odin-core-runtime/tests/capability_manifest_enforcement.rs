@@ -48,6 +48,7 @@ fn request_for(plugin: &str, capability: &str) -> ActionRequest {
         input: serde_json::json!({
             "url": "https://example.com"
         }),
+        run_context: None,
     }
 }
 
@@ -65,6 +66,7 @@ fn request_for_with_scope(plugin: &str, capability: &str, scope: &[&str]) -> Act
         input: serde_json::json!({
             "url": "https://example.com"
         }),
+        run_context: None,
     }
 }
 
@@ -265,6 +267,7 @@ fn executes_stagehand_observe_domain_with_domain_input() {
                 input: serde_json::json!({
                     "domain": "example.com"
                 }),
+                run_context: None,
             },
             &CapabilityManifest {
                 schema_version: 1,

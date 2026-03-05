@@ -291,7 +291,33 @@ mod tests {
         });
 
         let req: ActionRequest = serde_json::from_value(value).expect("decode");
-        assert_eq!(req.run_context.unwrap().run_id, "run-abc12345");
+        assert_eq!(req.run_context.as_ref().expect("run context").run_id, "run-abc12345");
+
+        let encoded = serde_json::to_string(&req).expect("encode");
+        let round_trip: ActionRequest = serde_json::from_str(&encoded).expect("decode round trip");
+        assert_eq!(
+            round_trip.run_context.expect("run context").run_id,
+            "run-abc12345"
+        );
+    }
+
+    #[test]
+    fn action_request_defaults_missing_run_context_to_none() {
+        let value = json!({
+            "request_id": "r1",
+            "risk_tier": "safe",
+            "capability": {
+                "plugin": "stagehand",
+                "project": "odin-core",
+                "capability": "browser.observe",
+                "scope": [],
+                "reason": "need context"
+            },
+            "input": {}
+        });
+
+        let req: ActionRequest = serde_json::from_value(value).expect("decode");
+        assert_eq!(req.run_context, None);
     }
 
     #[test]

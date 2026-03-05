@@ -456,6 +456,7 @@ where
                             },
                         },
                         input,
+                        run_context: None,
                     };
                     let manifest = CapabilityManifest {
                         schema_version: 1,
@@ -495,6 +496,7 @@ where
                             "task_type": task_type,
                             "origin_task_id": task.task_id
                         }),
+                        run_context: None,
                     };
 
                     match self.evaluate_policy(&request)? {
@@ -879,6 +881,7 @@ mod tests {
                 reason: "unit test".to_string(),
             },
             input: serde_json::Value::Null,
+            run_context: None,
         }
     }
 

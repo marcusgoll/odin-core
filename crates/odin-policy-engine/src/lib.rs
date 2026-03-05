@@ -97,6 +97,7 @@ mod tests {
                 reason: "read repository metadata".to_string(),
             },
             input: serde_json::Value::Null,
+            run_context: None,
         }
     }
 
