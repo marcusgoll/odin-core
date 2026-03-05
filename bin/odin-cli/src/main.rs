@@ -182,6 +182,7 @@ fn sample_action_request() -> ActionRequest {
             reason: "bootstrap health check".to_string(),
         },
         input: serde_json::json!({"probe": true}),
+        run_context: None,
     }
 }
 

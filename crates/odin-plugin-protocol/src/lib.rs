@@ -291,14 +291,18 @@ mod tests {
         });
 
         let req: ActionRequest = serde_json::from_value(value).expect("decode");
-        assert_eq!(req.run_context.as_ref().expect("run context").run_id, "run-abc12345");
+        let expected_run_context = RunContext {
+            run_id: "run-abc12345".to_string(),
+            autonomy_level: "high".to_string(),
+            risk_class: "sensitive".to_string(),
+            policy_profile: "default".to_string(),
+            tool_subset_id: "subset-1".to_string(),
+        };
+        assert_eq!(req.run_context, Some(expected_run_context.clone()));
 
         let encoded = serde_json::to_string(&req).expect("encode");
         let round_trip: ActionRequest = serde_json::from_str(&encoded).expect("decode round trip");
-        assert_eq!(
-            round_trip.run_context.expect("run context").run_id,
-            "run-abc12345"
-        );
+        assert_eq!(round_trip.run_context, Some(expected_run_context));
     }
 
     #[test]
