@@ -64,6 +64,20 @@ impl PolicyEngine for StaticPolicyEngine {
             });
         }
 
+        if request.capability.capability == "prod.deploy" {
+            let Some(run_context) = request.run_context.as_ref() else {
+                return Ok(PolicyDecision::Deny {
+                    reason_code: "run_context_required".to_string(),
+                });
+            };
+
+            if run_context.autonomy_level.trim().to_ascii_uppercase() == "L1" {
+                return Ok(PolicyDecision::Deny {
+                    reason_code: "autonomy_level_block".to_string(),
+                });
+            }
+        }
+
         if matches!(request.risk_tier, RiskTier::Destructive)
             && self.require_approval_for_destructive
         {
@@ -81,7 +95,7 @@ impl PolicyEngine for StaticPolicyEngine {
 
 #[cfg(test)]
 mod tests {
-    use odin_plugin_protocol::{ActionRequest, CapabilityRequest, RiskTier};
+    use odin_plugin_protocol::{ActionRequest, CapabilityRequest, RiskTier, RunContext};
 
     use super::{PolicyEngine, StaticPolicyEngine};
 
@@ -97,6 +111,7 @@ mod tests {
                 reason: "read repository metadata".to_string(),
             },
             input: serde_json::Value::Null,
+            run_context: None,
         }
     }
 
@@ -141,5 +156,95 @@ mod tests {
             decision,
             odin_plugin_protocol::PolicyDecision::RequireApproval { .. }
         ));
+    }
+
+    #[test]
+    fn l1_blocks_prod_deploy_capability() {
+        let mut engine = StaticPolicyEngine::default();
+        engine.allow_capability("example.safe-github", "demo", "prod.deploy");
+
+        let mut request = make_request(RiskTier::Safe);
+        request.capability.capability = "prod.deploy".to_string();
+        request.run_context = Some(RunContext {
+            run_id: "run-1".to_string(),
+            autonomy_level: "L1".to_string(),
+            risk_class: "safe".to_string(),
+            policy_profile: "default".to_string(),
+            tool_subset_id: "core".to_string(),
+        });
+
+        let decision = engine.decide(&request).expect("decision");
+        assert_eq!(
+            decision,
+            odin_plugin_protocol::PolicyDecision::Deny {
+                reason_code: "autonomy_level_block".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn l1_case_whitespace_variant_blocks_prod_deploy_capability() {
+        let mut engine = StaticPolicyEngine::default();
+        engine.allow_capability("example.safe-github", "demo", "prod.deploy");
+
+        let mut request = make_request(RiskTier::Safe);
+        request.capability.capability = "prod.deploy".to_string();
+        request.run_context = Some(RunContext {
+            run_id: "run-1".to_string(),
+            autonomy_level: " l1 ".to_string(),
+            risk_class: "safe".to_string(),
+            policy_profile: "default".to_string(),
+            tool_subset_id: "core".to_string(),
+        });
+
+        let decision = engine.decide(&request).expect("decision");
+        assert_eq!(
+            decision,
+            odin_plugin_protocol::PolicyDecision::Deny {
+                reason_code: "autonomy_level_block".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn non_l1_context_allows_prod_deploy_when_capability_granted() {
+        let mut engine = StaticPolicyEngine::default();
+        engine.allow_capability("example.safe-github", "demo", "prod.deploy");
+
+        let mut request = make_request(RiskTier::Safe);
+        request.capability.capability = "prod.deploy".to_string();
+        request.run_context = Some(RunContext {
+            run_id: "run-1".to_string(),
+            autonomy_level: "L2".to_string(),
+            risk_class: "safe".to_string(),
+            policy_profile: "default".to_string(),
+            tool_subset_id: "core".to_string(),
+        });
+
+        let decision = engine.decide(&request).expect("decision");
+        assert_eq!(
+            decision,
+            odin_plugin_protocol::PolicyDecision::Allow {
+                reason_code: "capability_granted".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn missing_run_context_denies_prod_deploy_when_capability_granted() {
+        let mut engine = StaticPolicyEngine::default();
+        engine.allow_capability("example.safe-github", "demo", "prod.deploy");
+
+        let mut request = make_request(RiskTier::Safe);
+        request.capability.capability = "prod.deploy".to_string();
+        request.run_context = None;
+
+        let decision = engine.decide(&request).expect("decision");
+        assert_eq!(
+            decision,
+            odin_plugin_protocol::PolicyDecision::Deny {
+                reason_code: "run_context_required".to_string(),
+            }
+        );
     }
 }
