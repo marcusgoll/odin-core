@@ -64,14 +64,15 @@ impl PolicyEngine for StaticPolicyEngine {
             });
         }
 
-        if request.capability.capability == "prod.deploy" {
+        if cap.capability == "prod.deploy" {
             let Some(run_context) = request.run_context.as_ref() else {
                 return Ok(PolicyDecision::Deny {
                     reason_code: "run_context_required".to_string(),
                 });
             };
 
-            if run_context.autonomy_level.trim().to_ascii_uppercase() == "L1" {
+            let autonomy_level = run_context.autonomy_level.trim().to_ascii_uppercase();
+            if autonomy_level == "L1" {
                 return Ok(PolicyDecision::Deny {
                     reason_code: "autonomy_level_block".to_string(),
                 });
