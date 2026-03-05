@@ -15,6 +15,7 @@ pub struct AuditRecord {
     pub ts_unix: u64,
     pub event_type: String,
     pub request_id: Option<String>,
+    /// Optional run identifier; defaults to None for backward compatibility.
     #[serde(default)]
     pub run_id: Option<String>,
     pub task_id: Option<String>,
@@ -54,5 +55,24 @@ mod tests {
         });
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn deserializing_legacy_record_without_run_id_defaults_to_none() {
+        let legacy = r#"{
+            "ts_unix": 1,
+            "event_type": "policy.decision",
+            "request_id": "r1",
+            "task_id": null,
+            "project": "demo",
+            "metadata": {"decision": "allow"}
+        }"#;
+
+        let record: AuditRecord =
+            serde_json::from_str(legacy).expect("legacy record should deserialize");
+
+        assert_eq!(record.run_id, None);
+        assert_eq!(record.request_id.as_deref(), Some("r1"));
+        assert_eq!(record.event_type, "policy.decision");
     }
 }

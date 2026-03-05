@@ -954,8 +954,11 @@ mod tests {
         assert_eq!(outcome.status, odin_plugin_protocol::ActionStatus::Executed);
 
         let records = audit.0.lock().expect("lock");
-        let first = records.first().expect("first audit record");
-        assert_eq!(first.run_id.as_deref(), Some("run-abc12345"));
+        let executed = records
+            .iter()
+            .find(|record| record.event_type == "action.executed")
+            .expect("action.executed audit record");
+        assert_eq!(executed.run_id.as_deref(), Some("run-abc12345"));
     }
 
     #[test]
