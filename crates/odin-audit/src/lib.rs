@@ -15,6 +15,8 @@ pub struct AuditRecord {
     pub ts_unix: u64,
     pub event_type: String,
     pub request_id: Option<String>,
+    #[serde(default)]
+    pub run_id: Option<String>,
     pub task_id: Option<String>,
     pub project: Option<String>,
     #[serde(default)]
@@ -45,6 +47,7 @@ mod tests {
             ts_unix: 1,
             event_type: "policy.decision".to_string(),
             request_id: Some("r1".to_string()),
+            run_id: None,
             task_id: None,
             project: Some("demo".to_string()),
             metadata: Value::Null,

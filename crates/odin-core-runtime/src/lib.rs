@@ -317,6 +317,7 @@ where
                     ts_unix: now_unix(),
                     event_type: "action.executed".to_string(),
                     request_id: Some(request.request_id.clone()),
+                    run_id: request.run_context.as_ref().map(|ctx| ctx.run_id.clone()),
                     task_id: None,
                     project: Some(request.capability.project.clone()),
                     metadata: serde_json::json!({
@@ -340,6 +341,7 @@ where
         request: ActionRequest,
         manifest: &CapabilityManifest,
     ) -> RuntimeResult<ActionOutcome> {
+        let run_id = request.run_context.as_ref().map(|ctx| ctx.run_id.clone());
         validate_capability(&request.capability)?;
         let manifest_denial = if manifest.schema_version != 1 {
             Some("manifest_schema_version_unsupported".to_string())
@@ -351,6 +353,7 @@ where
                 ts_unix: now_unix(),
                 event_type: "governance.manifest.denied".to_string(),
                 request_id: Some(request.request_id.clone()),
+                run_id: run_id.clone(),
                 task_id: None,
                 project: Some(request.capability.project.clone()),
                 metadata: serde_json::json!({
@@ -372,6 +375,7 @@ where
             ts_unix: now_unix(),
             event_type: "governance.manifest.validated".to_string(),
             request_id: Some(request.request_id.clone()),
+            run_id: run_id.clone(),
             task_id: None,
             project: Some(request.capability.project.clone()),
             metadata: serde_json::json!({
@@ -391,6 +395,7 @@ where
                 ts_unix: now_unix(),
                 event_type: "governance.capability.used".to_string(),
                 request_id: Some(request_id),
+                run_id,
                 task_id: None,
                 project: Some(project),
                 metadata: serde_json::json!({
@@ -533,6 +538,7 @@ where
                                 ts_unix: now_unix(),
                                 event_type: "task.enqueued".to_string(),
                                 request_id: Some(request.request_id.clone()),
+                                run_id: None,
                                 task_id: Some(task.task_id.clone()),
                                 project: Some(project.clone()),
                                 metadata: serde_json::json!({
@@ -559,6 +565,7 @@ where
                         ts_unix: now_unix(),
                         event_type: "plugin.noop".to_string(),
                         request_id: None,
+                        run_id: None,
                         task_id: Some(task.task_id.clone()),
                         project: Some(task.payload.project.clone()),
                         metadata: serde_json::json!({
@@ -579,6 +586,7 @@ where
             ts_unix: now_unix(),
             event_type: "policy.decision".to_string(),
             request_id: Some(request.request_id.clone()),
+            run_id: request.run_context.as_ref().map(|ctx| ctx.run_id.clone()),
             task_id: None,
             project: Some(request.capability.project.clone()),
             metadata: serde_json::json!({
@@ -802,7 +810,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use odin_audit::{AuditRecord, AuditSink};
-    use odin_plugin_protocol::{ActionRequest, CapabilityRequest, RiskTier};
+    use odin_plugin_protocol::{ActionRequest, CapabilityRequest, RiskTier, RunContext};
     use odin_policy_engine::StaticPolicyEngine;
 
     use super::{
@@ -924,6 +932,30 @@ mod tests {
             .handle_action(request())
             .expect_err("expected execution error");
         assert!(matches!(err, RuntimeError::Execution(_)));
+    }
+
+    #[test]
+    fn executed_action_records_run_id_in_audit() {
+        let mut policy = StaticPolicyEngine::default();
+        policy.allow_capability("example.safe-github", "demo", "repo.read");
+
+        let audit = MemoryAuditSink::default();
+        let runtime = OrchestratorRuntime::new(policy, audit.clone(), super::DryRunExecutor);
+        let mut req = request();
+        req.run_context = Some(RunContext {
+            run_id: "run-abc12345".to_string(),
+            autonomy_level: "supervised".to_string(),
+            risk_class: "safe".to_string(),
+            policy_profile: "default".to_string(),
+            tool_subset_id: "core".to_string(),
+        });
+
+        let outcome = runtime.handle_action(req).expect("outcome");
+        assert_eq!(outcome.status, odin_plugin_protocol::ActionStatus::Executed);
+
+        let records = audit.0.lock().expect("lock");
+        let first = records.first().expect("first audit record");
+        assert_eq!(first.run_id.as_deref(), Some("run-abc12345"));
     }
 
     #[test]
