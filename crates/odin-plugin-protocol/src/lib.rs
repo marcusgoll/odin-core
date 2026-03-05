@@ -105,6 +105,17 @@ pub struct ActionRequest {
     pub capability: CapabilityRequest,
     #[serde(default)]
     pub input: Value,
+    #[serde(default)]
+    pub run_context: Option<RunContext>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RunContext {
+    pub run_id: String,
+    pub autonomy_level: String,
+    pub risk_class: String,
+    pub policy_profile: String,
+    pub tool_subset_id: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -255,6 +266,32 @@ mod tests {
         });
         let decoded: ActionOutcome = serde_json::from_value(value).expect("decode");
         assert_eq!(decoded.output, json!(null));
+    }
+
+    #[test]
+    fn action_request_round_trip_with_run_context() {
+        let value = json!({
+            "request_id": "r1",
+            "risk_tier": "safe",
+            "capability": {
+                "plugin": "stagehand",
+                "project": "odin-core",
+                "capability": "browser.observe",
+                "scope": [],
+                "reason": "need context"
+            },
+            "input": {},
+            "run_context": {
+                "run_id": "run-abc12345",
+                "autonomy_level": "high",
+                "risk_class": "sensitive",
+                "policy_profile": "default",
+                "tool_subset_id": "subset-1"
+            }
+        });
+
+        let req: ActionRequest = serde_json::from_value(value).expect("decode");
+        assert_eq!(req.run_context.unwrap().run_id, "run-abc12345");
     }
 
     #[test]
