@@ -1100,14 +1100,14 @@ fn parse_error_targets_native_contract(raw_args: &[String]) -> bool {
 
         return matches!(
             arg,
-            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify" | "skill" | "migrate"
+            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify" | "skill" | "migrate" | "capacity"
         );
     }
 
     if let Some(token) = raw_args.get(idx).map(String::as_str) {
         return matches!(
             token,
-            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify" | "skill" | "migrate"
+            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify" | "skill" | "migrate" | "capacity"
         );
     }
 
