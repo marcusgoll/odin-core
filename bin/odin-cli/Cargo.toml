@@ -8,11 +8,14 @@ license.workspace = true
 anyhow.workspace = true
 clap = { version = "4.5", features = ["derive"] }
 serde_json.workspace = true
+serde_yml.workspace = true
 tracing.workspace = true
 roxmltree = "0.20"
 odin-audit = { path = "../../crates/odin-audit" }
+odin-capacity = { path = "../../crates/odin-capacity" }
 odin-compat-bash = { path = "../../crates/odin-compat-bash" }
 odin-core-runtime = { path = "../../crates/odin-core-runtime" }
+odin-governance = { path = "../../crates/odin-governance" }
 odin-migration = { path = "../../crates/odin-migration" }
 odin-plugin-protocol = { path = "../../crates/odin-plugin-protocol" }
 odin-policy-engine = { path = "../../crates/odin-policy-engine" }
