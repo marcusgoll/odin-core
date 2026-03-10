@@ -5,8 +5,8 @@ describe("Protocol types", () => {
   it("should serialize a request_capability directive", () => {
     const directive: PluginDirective = {
       action: "request_capability",
-      capability: { id: "browser.navigate", project: "cfipros" },
-      reason: "Navigate to homepage",
+      capability: { id: "huginn.observe_url", project: "cfipros" },
+      reason: "Observe homepage",
       input: { url: "https://cfipros.com" },
       risk_tier: "safe",
     };
@@ -26,11 +26,14 @@ describe("Protocol types", () => {
       event_id: "evt-1",
       event_type: "task.received",
       project: "cfipros",
-      payload: { task_type: "browser.navigate", input: { url: "https://cfipros.com" } },
+      payload: {
+        task_type: "huginn.observe_url",
+        input: { url: "https://cfipros.com" },
+      },
     };
     const json = JSON.stringify(envelope);
     const parsed = JSON.parse(json) as EventEnvelope;
     expect(parsed.event_type).toBe("task.received");
-    expect(parsed.payload.task_type).toBe("browser.navigate");
+    expect(parsed.payload.task_type).toBe("huginn.observe_url");
   });
 });

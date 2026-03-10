@@ -9,9 +9,9 @@ skills:
       - id: design.review
         scope:
           - project
-  - name: stagehand
+  - name: huginn
     trust_level: caution
-    source: project:/skills/stagehand
+    source: project:/skills/huginn
     pinned_version: null
     capabilities:
       - id: browser.observe

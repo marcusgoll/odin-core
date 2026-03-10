@@ -1,6 +1,6 @@
-# Stagehand Safety Envelope
+# Huginn Safety Envelope
 
-Stagehand is treated as high-risk browser automation and is deny-by-default.
+Huginn is treated as high-risk browser automation and is deny-by-default.
 
 ## Default policy
 
@@ -21,21 +21,21 @@ These actions are always denied by default policy:
 
 ## Required envelope for enablement
 
-Enablement requires a `PluginPermissionEnvelope` for `plugin: stagehand` with trusted/caution trust and explicit capabilities:
+Enablement requires a `PluginPermissionEnvelope` for `plugin: huginn` with trusted/caution trust and explicit capabilities:
 
-- `stagehand.enabled`
-- `browser.observe` (or `stagehand.observe_url` / `stagehand.observe_domain`) with domain scope
-- `workspace.read` (or `stagehand.workspace.read`) with workspace scope
-- optional `command.run` (or `stagehand.command.run`) with explicit command scope
+- `huginn.enabled`
+- `browser.observe` (or `huginn.observe_url` / `huginn.observe_domain`) with domain scope
+- `workspace.read` (or `huginn.workspace.read`) with workspace scope
+- optional `command.run` (or `huginn.command.run`) with explicit command scope
 
-`untrusted` envelopes cannot enable stagehand even if `stagehand.enabled` is present.
+`untrusted` envelopes cannot enable Huginn even if `huginn.enabled` is present.
 
 ## Operator workflow
 
 Blocked example (missing domains/workspaces):
 
 ```bash
-cargo run -p odin-cli -- governance enable-plugin --plugin stagehand --run-once
+cargo run -p odin-cli -- governance enable-plugin --plugin huginn --run-once
 ```
 
 Expected result: `status: "blocked"`, `error_code: "policy_requirements_missing"`, reasons include `domains_required` and `workspaces_required`.
@@ -43,7 +43,7 @@ Expected result: `status: "blocked"`, `error_code: "policy_requirements_missing"
 Allowed example:
 
 ```bash
-cargo run -p odin-cli -- governance enable-plugin --plugin stagehand --domains example.com --workspaces /tmp --run-once
+cargo run -p odin-cli -- governance enable-plugin --plugin huginn --domains example.com --workspaces /tmp --run-once
 ```
 
 Expected result: `status: "ok"` with all policy checks `decision: "allow"`.
@@ -59,7 +59,7 @@ Even when enabled, policy remains constrained:
 
 ## Evidence requirements
 
-Before claiming stagehand is safely enabled, record:
+Before claiming Huginn is safely enabled, record:
 
 1. enable command and JSON output
 2. domain/workspace/command check decisions

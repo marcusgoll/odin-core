@@ -1,8 +1,8 @@
 schema_version: 1
-plugin: stagehand
+plugin: huginn
 trust_level: caution
 permissions:
-  - id: stagehand.enabled
+  - id: huginn.enabled
     scope: []
   - id: browser.observe
     scope:

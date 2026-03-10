@@ -8,8 +8,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use odin_audit::{AuditError, AuditRecord, AuditSink};
 use odin_governance::plugins::{
-    stagehand_policy_from_envelope, Action as StagehandAction,
-    PermissionDecision as StagehandPermissionDecision,
+    huginn_policy_from_envelope, Action as HuginnAction,
+    PermissionDecision as HuginnPermissionDecision,
 };
 use odin_plugin_protocol::{
     ActionOutcome, ActionRequest, ActionStatus, CapabilityManifest, CapabilityRequest,
@@ -684,58 +684,58 @@ fn manifest_denial_reason(
     }
 
     let capability = request.capability.capability.as_str();
-    if is_stagehand_capability(capability) && request.capability.plugin != "stagehand" {
+    if is_huginn_capability(capability) && request.capability.plugin != "huginn" {
         return Some("plugin_permission_denied".to_string());
     }
 
-    stagehand_permission_denial(capability, &request.input, manifest)
+    huginn_permission_denial(capability, &request.input, manifest)
 }
 
-fn stagehand_permission_denial(
+fn huginn_permission_denial(
     capability: &str,
     input: &Value,
     manifest: &CapabilityManifest,
 ) -> Option<String> {
-    if manifest.plugin != "stagehand" {
+    if manifest.plugin != "huginn" {
         return None;
     }
 
-    let action = match stagehand_action_from_capability(capability, input) {
+    let action = match huginn_action_from_capability(capability, input) {
         Some(action) => action,
-        None if capability.starts_with("stagehand.") => {
-            return Some("manifest_stagehand_capability_unknown".to_string())
+        None if capability.starts_with("huginn.") => {
+            return Some("manifest_huginn_capability_unknown".to_string())
         }
         None => return None,
     };
-    let policy = stagehand_policy_from_envelope(&PluginPermissionEnvelope {
+    let policy = huginn_policy_from_envelope(&PluginPermissionEnvelope {
         plugin: manifest.plugin.clone(),
         trust_level: TrustLevel::Caution,
         permissions: manifest.capabilities.clone(),
     });
     match policy.evaluate(action) {
-        StagehandPermissionDecision::Allow { .. } => None,
-        StagehandPermissionDecision::Deny { reason_code } => Some(reason_code),
+        HuginnPermissionDecision::Allow { .. } => None,
+        HuginnPermissionDecision::Deny { reason_code } => Some(reason_code),
     }
 }
 
-fn stagehand_action_from_capability(capability: &str, input: &Value) -> Option<StagehandAction> {
+fn huginn_action_from_capability(capability: &str, input: &Value) -> Option<HuginnAction> {
     match capability {
-        "browser.observe" | "stagehand.observe_url" => Some(StagehandAction::ObserveUrl(
+        "browser.observe" | "huginn.observe_url" => Some(HuginnAction::ObserveUrl(
             input_string(input, "url").unwrap_or_default(),
         )),
-        "stagehand.observe_domain" => Some(StagehandAction::ObserveUrl(
+        "huginn.observe_domain" => Some(HuginnAction::ObserveUrl(
             canonical_observe_domain_input(input),
         )),
-        "workspace.read" | "stagehand.workspace.read" => Some(StagehandAction::ReadWorkspace(
+        "workspace.read" | "huginn.workspace.read" => Some(HuginnAction::ReadWorkspace(
             input_string(input, "workspace").unwrap_or_default(),
         )),
-        "command.run" | "stagehand.command.run" => Some(StagehandAction::RunCommand(
+        "command.run" | "huginn.command.run" => Some(HuginnAction::RunCommand(
             input_string(input, "command").unwrap_or_default(),
         )),
-        "stagehand.login" => Some(StagehandAction::Login),
-        "stagehand.payment" => Some(StagehandAction::Payment),
-        "stagehand.pii_submit" => Some(StagehandAction::PiiSubmit),
-        "stagehand.file_upload" => Some(StagehandAction::FileUpload),
+        "huginn.login" => Some(HuginnAction::Login),
+        "huginn.payment" => Some(HuginnAction::Payment),
+        "huginn.pii_submit" => Some(HuginnAction::PiiSubmit),
+        "huginn.file_upload" => Some(HuginnAction::FileUpload),
         _ => None,
     }
 }
@@ -754,11 +754,11 @@ fn canonical_observe_domain_input(input: &Value) -> String {
     }
 }
 
-fn is_stagehand_capability(capability: &str) -> bool {
+fn is_huginn_capability(capability: &str) -> bool {
     matches!(
         capability,
         "browser.observe" | "workspace.read" | "command.run"
-    ) || capability.starts_with("stagehand.")
+    ) || capability.starts_with("huginn.")
 }
 
 fn input_string(input: &Value, key: &str) -> Option<String> {

@@ -6,7 +6,7 @@ use std::path::{Component, Path, PathBuf};
 use odin_plugin_protocol::{DelegationCapability, PluginPermissionEnvelope, TrustLevel};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum StagehandMode {
+pub enum HuginnMode {
     ReadObserve,
 }
 
@@ -34,19 +34,19 @@ pub enum PermissionDecision {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct StagehandPolicy {
+pub struct HuginnPolicy {
     enabled: bool,
-    mode: StagehandMode,
+    mode: HuginnMode,
     allowed_domains: BTreeSet<DomainRule>,
     allowed_workspaces: BTreeSet<String>,
     allowed_commands: BTreeSet<String>,
 }
 
-impl Default for StagehandPolicy {
+impl Default for HuginnPolicy {
     fn default() -> Self {
         Self {
             enabled: false,
-            mode: StagehandMode::ReadObserve,
+            mode: HuginnMode::ReadObserve,
             allowed_domains: BTreeSet::new(),
             allowed_workspaces: BTreeSet::new(),
             allowed_commands: BTreeSet::new(),
@@ -54,7 +54,7 @@ impl Default for StagehandPolicy {
     }
 }
 
-impl StagehandPolicy {
+impl HuginnPolicy {
     pub fn with_enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
         self
@@ -133,7 +133,7 @@ impl StagehandPolicy {
     }
 
     fn evaluate_workspace(&self, workspace: &str) -> PermissionDecision {
-        if !matches!(self.mode, StagehandMode::ReadObserve) {
+        if !matches!(self.mode, HuginnMode::ReadObserve) {
             return deny("mode_not_supported");
         }
 
@@ -149,7 +149,7 @@ impl StagehandPolicy {
     }
 
     fn evaluate_command(&self, command: &str) -> PermissionDecision {
-        if !matches!(self.mode, StagehandMode::ReadObserve) {
+        if !matches!(self.mode, HuginnMode::ReadObserve) {
             return deny("mode_not_supported");
         }
 
@@ -225,34 +225,34 @@ impl PluginPermissionRegistry {
         self.envelopes.get(plugin)
     }
 
-    pub fn stagehand_policy(&self) -> StagehandPolicy {
-        self.get("stagehand")
-            .map(stagehand_policy_from_envelope)
-            .unwrap_or_else(stagehand_default_policy)
+    pub fn huginn_policy(&self) -> HuginnPolicy {
+        self.get("huginn")
+            .map(huginn_policy_from_envelope)
+            .unwrap_or_else(huginn_default_policy)
     }
 }
 
-pub fn stagehand_default_policy() -> StagehandPolicy {
-    StagehandPolicy::default()
+pub fn huginn_default_policy() -> HuginnPolicy {
+    HuginnPolicy::default()
 }
 
-pub fn stagehand_with_domains<I, S>(domains: I) -> StagehandPolicy
+pub fn huginn_with_domains<I, S>(domains: I) -> HuginnPolicy
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
-    stagehand_default_policy()
+    huginn_default_policy()
         .with_enabled(true)
         .with_domains(domains)
 }
 
-pub fn stagehand_policy_from_envelope(envelope: &PluginPermissionEnvelope) -> StagehandPolicy {
-    if envelope.plugin != "stagehand" {
-        return stagehand_default_policy();
+pub fn huginn_policy_from_envelope(envelope: &PluginPermissionEnvelope) -> HuginnPolicy {
+    if envelope.plugin != "huginn" {
+        return huginn_default_policy();
     }
 
     let can_enable = envelope.trust_level != TrustLevel::Untrusted;
-    let mut policy = stagehand_default_policy();
+    let mut policy = huginn_default_policy();
 
     for permission in &envelope.permissions {
         apply_permission_scope(&mut policy, permission, can_enable);
@@ -262,12 +262,12 @@ pub fn stagehand_policy_from_envelope(envelope: &PluginPermissionEnvelope) -> St
 }
 
 fn apply_permission_scope(
-    policy: &mut StagehandPolicy,
+    policy: &mut HuginnPolicy,
     permission: &DelegationCapability,
     can_enable: bool,
 ) {
     match permission.id.as_str() {
-        "browser.observe" | "stagehand.observe_url" | "stagehand.observe_domain" => {
+        "browser.observe" | "huginn.observe_url" | "huginn.observe_domain" => {
             policy.allowed_domains.extend(
                 permission
                     .scope
@@ -275,7 +275,7 @@ fn apply_permission_scope(
                     .filter_map(|domain| normalize_domain(domain)),
             );
         }
-        "workspace.read" | "stagehand.workspace.read" => {
+        "workspace.read" | "huginn.workspace.read" => {
             policy.allowed_workspaces.extend(
                 permission
                     .scope
@@ -283,7 +283,7 @@ fn apply_permission_scope(
                     .filter_map(|workspace| normalize_workspace(workspace)),
             );
         }
-        "command.run" | "stagehand.command.run" => {
+        "command.run" | "huginn.command.run" => {
             policy.allowed_commands.extend(
                 permission
                     .scope
@@ -291,7 +291,7 @@ fn apply_permission_scope(
                     .filter_map(|command| normalize_command_scope_entry(command)),
             );
         }
-        "stagehand.enabled" => {
+        "huginn.enabled" => {
             if can_enable {
                 policy.enabled = true;
             }
@@ -614,7 +614,7 @@ mod tests {
 
     #[test]
     fn default_policy_denies_when_disabled() {
-        let policy = stagehand_default_policy();
+        let policy = huginn_default_policy();
         let decision = policy.evaluate(Action::ObserveUrl("https://example.com".to_string()));
         assert_eq!(
             decision,
@@ -626,7 +626,7 @@ mod tests {
 
     #[test]
     fn policy_disallows_sensitive_actions_even_when_enabled() {
-        let policy = stagehand_with_domains(["example.com"]);
+        let policy = huginn_with_domains(["example.com"]);
         let decision = policy.evaluate(Action::Payment);
         assert_eq!(
             decision,
@@ -638,7 +638,7 @@ mod tests {
 
     #[test]
     fn policy_allows_allowlisted_domain() {
-        let policy = stagehand_with_domains(["example.com"]);
+        let policy = huginn_with_domains(["example.com"]);
         let decision = policy.evaluate(Action::ObserveUrl("https://example.com/path".to_string()));
         assert_eq!(
             decision,
@@ -650,7 +650,7 @@ mod tests {
 
     #[test]
     fn policy_wildcard_allows_subdomain() {
-        let policy = stagehand_with_domains(["*.example.com"]);
+        let policy = huginn_with_domains(["*.example.com"]);
         let decision = policy.evaluate(Action::ObserveUrl(
             "https://www.example.com/path".to_string(),
         ));
@@ -663,14 +663,14 @@ mod tests {
     }
 
     #[test]
-    fn registry_uses_stagehand_envelope() {
+    fn registry_uses_huginn_envelope() {
         let mut registry = PluginPermissionRegistry::new();
         registry.insert(PluginPermissionEnvelope {
-            plugin: "stagehand".to_string(),
+            plugin: "huginn".to_string(),
             trust_level: TrustLevel::Trusted,
             permissions: vec![
                 DelegationCapability {
-                    id: "stagehand.enabled".to_string(),
+                    id: "huginn.enabled".to_string(),
                     scope: vec![],
                 },
                 DelegationCapability {
@@ -681,7 +681,7 @@ mod tests {
         });
 
         let decision = registry
-            .stagehand_policy()
+            .huginn_policy()
             .evaluate(Action::ObserveUrl("https://example.com".to_string()));
         assert_eq!(
             decision,
@@ -693,8 +693,8 @@ mod tests {
 
     #[test]
     fn trusted_envelope_without_enable_capability_stays_disabled() {
-        let policy = stagehand_policy_from_envelope(&PluginPermissionEnvelope {
-            plugin: "stagehand".to_string(),
+        let policy = huginn_policy_from_envelope(&PluginPermissionEnvelope {
+            plugin: "huginn".to_string(),
             trust_level: TrustLevel::Trusted,
             permissions: vec![DelegationCapability {
                 id: "browser.observe".to_string(),

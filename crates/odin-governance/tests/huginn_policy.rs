@@ -1,5 +1,5 @@
 use odin_governance::plugins::{
-    stagehand_default_policy, stagehand_policy_from_envelope, stagehand_with_domains, Action,
+    huginn_default_policy, huginn_policy_from_envelope, huginn_with_domains, Action,
     PermissionDecision,
 };
 use odin_plugin_protocol::{DelegationCapability, PluginPermissionEnvelope, TrustLevel};
@@ -7,8 +7,8 @@ use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
-fn stagehand_denies_login_by_default() {
-    let policy = stagehand_default_policy();
+fn huginn_denies_login_by_default() {
+    let policy = huginn_default_policy();
     let decision = policy.evaluate(Action::Login);
 
     assert_eq!(
@@ -20,8 +20,8 @@ fn stagehand_denies_login_by_default() {
 }
 
 #[test]
-fn stagehand_denies_domain_outside_allowlist() {
-    let policy = stagehand_with_domains(["example.com"]);
+fn huginn_denies_domain_outside_allowlist() {
+    let policy = huginn_with_domains(["example.com"]);
     let decision = policy.evaluate(Action::ObserveUrl("https://not-allowed.dev".to_string()));
 
     assert_eq!(
@@ -33,8 +33,8 @@ fn stagehand_denies_domain_outside_allowlist() {
 }
 
 #[test]
-fn stagehand_exact_domain_does_not_allow_subdomain() {
-    let policy = stagehand_with_domains(["example.com"]);
+fn huginn_exact_domain_does_not_allow_subdomain() {
+    let policy = huginn_with_domains(["example.com"]);
     let decision = policy.evaluate(Action::ObserveUrl(
         "https://sub.example.com/path".to_string(),
     ));
@@ -48,8 +48,8 @@ fn stagehand_exact_domain_does_not_allow_subdomain() {
 }
 
 #[test]
-fn stagehand_wildcard_domain_allows_subdomain() {
-    let policy = stagehand_with_domains(["*.example.com"]);
+fn huginn_wildcard_domain_allows_subdomain() {
+    let policy = huginn_with_domains(["*.example.com"]);
     let decision = policy.evaluate(Action::ObserveUrl(
         "https://sub.example.com/path".to_string(),
     ));
@@ -63,8 +63,8 @@ fn stagehand_wildcard_domain_allows_subdomain() {
 }
 
 #[test]
-fn stagehand_wildcard_domain_does_not_allow_apex() {
-    let policy = stagehand_with_domains(["*.example.com"]);
+fn huginn_wildcard_domain_does_not_allow_apex() {
+    let policy = huginn_with_domains(["*.example.com"]);
     let decision = policy.evaluate(Action::ObserveUrl("https://example.com/path".to_string()));
 
     assert_eq!(
@@ -76,8 +76,8 @@ fn stagehand_wildcard_domain_does_not_allow_apex() {
 }
 
 #[test]
-fn stagehand_wildcard_with_scheme_allows_subdomain() {
-    let policy = stagehand_with_domains(["https://*.example.com"]);
+fn huginn_wildcard_with_scheme_allows_subdomain() {
+    let policy = huginn_with_domains(["https://*.example.com"]);
     let decision = policy.evaluate(Action::ObserveUrl(
         "https://sub.example.com/path".to_string(),
     ));
@@ -91,8 +91,8 @@ fn stagehand_wildcard_with_scheme_allows_subdomain() {
 }
 
 #[test]
-fn stagehand_allows_query_form_url_host_parse() {
-    let policy = stagehand_with_domains(["example.com"]);
+fn huginn_allows_query_form_url_host_parse() {
+    let policy = huginn_with_domains(["example.com"]);
     let decision = policy.evaluate(Action::ObserveUrl("https://example.com?x=1".to_string()));
 
     assert_eq!(
@@ -104,8 +104,8 @@ fn stagehand_allows_query_form_url_host_parse() {
 }
 
 #[test]
-fn stagehand_denies_command_with_absolute_path_outside_workspace() {
-    let policy = stagehand_default_policy()
+fn huginn_denies_command_with_absolute_path_outside_workspace() {
+    let policy = huginn_default_policy()
         .with_enabled(true)
         .with_commands(["cat"])
         .with_workspaces(["/home/orchestrator/odin-core"]);
@@ -121,8 +121,8 @@ fn stagehand_denies_command_with_absolute_path_outside_workspace() {
 }
 
 #[test]
-fn stagehand_denies_workspace_parent_traversal_outside_allowlist() {
-    let policy = stagehand_default_policy()
+fn huginn_denies_workspace_parent_traversal_outside_allowlist() {
+    let policy = huginn_default_policy()
         .with_enabled(true)
         .with_workspaces(["/home/orchestrator/allowed"]);
 
@@ -139,8 +139,8 @@ fn stagehand_denies_workspace_parent_traversal_outside_allowlist() {
 }
 
 #[test]
-fn stagehand_denies_command_with_parent_traversal_outside_workspace() {
-    let policy = stagehand_default_policy()
+fn huginn_denies_command_with_parent_traversal_outside_workspace() {
+    let policy = huginn_default_policy()
         .with_enabled(true)
         .with_commands(["cat"])
         .with_workspaces(["/home/orchestrator/allowed"]);
@@ -158,8 +158,8 @@ fn stagehand_denies_command_with_parent_traversal_outside_workspace() {
 }
 
 #[test]
-fn stagehand_denies_command_with_shell_metacharacters() {
-    let policy = stagehand_default_policy()
+fn huginn_denies_command_with_shell_metacharacters() {
+    let policy = huginn_default_policy()
         .with_enabled(true)
         .with_commands(["cat"])
         .with_workspaces(["/home/orchestrator/odin-core"]);
@@ -177,8 +177,8 @@ fn stagehand_denies_command_with_shell_metacharacters() {
 }
 
 #[test]
-fn stagehand_denies_command_with_relative_parent_traversal() {
-    let policy = stagehand_default_policy()
+fn huginn_denies_command_with_relative_parent_traversal() {
+    let policy = huginn_default_policy()
         .with_enabled(true)
         .with_commands(["cat"])
         .with_workspaces(["/home/orchestrator/odin-core"]);
@@ -194,8 +194,8 @@ fn stagehand_denies_command_with_relative_parent_traversal() {
 }
 
 #[test]
-fn stagehand_denies_unscoped_relative_command_arg_when_workspace_boundaries_active() {
-    let policy = stagehand_default_policy()
+fn huginn_denies_unscoped_relative_command_arg_when_workspace_boundaries_active() {
+    let policy = huginn_default_policy()
         .with_enabled(true)
         .with_commands(["cat"])
         .with_workspaces(["/home/orchestrator/odin-core"]);
@@ -211,8 +211,8 @@ fn stagehand_denies_unscoped_relative_command_arg_when_workspace_boundaries_acti
 }
 
 #[test]
-fn stagehand_denies_filename_like_positional_arg_when_workspace_boundaries_active() {
-    let policy = stagehand_default_policy()
+fn huginn_denies_filename_like_positional_arg_when_workspace_boundaries_active() {
+    let policy = huginn_default_policy()
         .with_enabled(true)
         .with_commands(["cat"])
         .with_workspaces(["/home/orchestrator/odin-core"]);
@@ -228,8 +228,8 @@ fn stagehand_denies_filename_like_positional_arg_when_workspace_boundaries_activ
 }
 
 #[test]
-fn stagehand_denies_relative_path_in_option_value_when_workspace_boundaries_active() {
-    let policy = stagehand_default_policy()
+fn huginn_denies_relative_path_in_option_value_when_workspace_boundaries_active() {
+    let policy = huginn_default_policy()
         .with_enabled(true)
         .with_commands(["cat"])
         .with_workspaces(["/home/orchestrator/odin-core"]);
@@ -247,8 +247,8 @@ fn stagehand_denies_relative_path_in_option_value_when_workspace_boundaries_acti
 }
 
 #[test]
-fn stagehand_denies_attached_short_option_relative_value_when_workspace_boundaries_active() {
-    let policy = stagehand_default_policy()
+fn huginn_denies_attached_short_option_relative_value_when_workspace_boundaries_active() {
+    let policy = huginn_default_policy()
         .with_enabled(true)
         .with_commands(["cat"])
         .with_workspaces(["/home/orchestrator/odin-core"]);
@@ -264,13 +264,13 @@ fn stagehand_denies_attached_short_option_relative_value_when_workspace_boundari
 }
 
 #[test]
-fn stagehand_untrusted_envelope_cannot_enable_plugin() {
+fn huginn_untrusted_envelope_cannot_enable_plugin() {
     let envelope = PluginPermissionEnvelope {
-        plugin: "stagehand".to_string(),
+        plugin: "huginn".to_string(),
         trust_level: TrustLevel::Untrusted,
         permissions: vec![
             DelegationCapability {
-                id: "stagehand.enabled".to_string(),
+                id: "huginn.enabled".to_string(),
                 scope: vec![],
             },
             DelegationCapability {
@@ -279,7 +279,7 @@ fn stagehand_untrusted_envelope_cannot_enable_plugin() {
             },
         ],
     };
-    let policy = stagehand_policy_from_envelope(&envelope);
+    let policy = huginn_policy_from_envelope(&envelope);
     let decision = policy.evaluate(Action::ObserveUrl("https://example.com".to_string()));
 
     assert_eq!(
@@ -291,8 +291,8 @@ fn stagehand_untrusted_envelope_cannot_enable_plugin() {
 }
 
 #[test]
-fn stagehand_rejects_whitespace_command_scope_entry() {
-    let policy = stagehand_default_policy()
+fn huginn_rejects_whitespace_command_scope_entry() {
+    let policy = huginn_default_policy()
         .with_enabled(true)
         .with_commands(["cat --color=always"]);
 
@@ -307,8 +307,8 @@ fn stagehand_rejects_whitespace_command_scope_entry() {
 }
 
 #[test]
-fn stagehand_denies_command_with_newline_control_separator() {
-    let policy = stagehand_default_policy()
+fn huginn_denies_command_with_newline_control_separator() {
+    let policy = huginn_default_policy()
         .with_enabled(true)
         .with_commands(["cat"]);
 
@@ -323,17 +323,17 @@ fn stagehand_denies_command_with_newline_control_separator() {
 }
 
 #[test]
-fn stagehand_allows_absolute_option_path_within_workspace() {
+fn huginn_allows_absolute_option_path_within_workspace() {
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("clock")
         .as_nanos();
-    let workspace = std::env::temp_dir().join(format!("odin-stagehand-allow-{unique}"));
+    let workspace = std::env::temp_dir().join(format!("odin-huginn-allow-{unique}"));
     let file = workspace.join("input.txt");
     fs::create_dir_all(&workspace).expect("create workspace");
     fs::write(&file, "fixture").expect("write fixture");
 
-    let policy = stagehand_default_policy()
+    let policy = huginn_default_policy()
         .with_enabled(true)
         .with_commands(["cat"])
         .with_workspaces([workspace.to_string_lossy().to_string()]);
@@ -354,8 +354,8 @@ fn stagehand_allows_absolute_option_path_within_workspace() {
 }
 
 #[test]
-fn stagehand_denies_scalar_option_value_when_workspace_boundaries_active() {
-    let policy = stagehand_default_policy()
+fn huginn_denies_scalar_option_value_when_workspace_boundaries_active() {
+    let policy = huginn_default_policy()
         .with_enabled(true)
         .with_commands(["cat"])
         .with_workspaces(["/home/orchestrator/odin-core"]);
@@ -371,8 +371,8 @@ fn stagehand_denies_scalar_option_value_when_workspace_boundaries_active() {
 }
 
 #[test]
-fn stagehand_denies_unresolved_absolute_command_path_fail_closed() {
-    let policy = stagehand_default_policy()
+fn huginn_denies_unresolved_absolute_command_path_fail_closed() {
+    let policy = huginn_default_policy()
         .with_enabled(true)
         .with_commands(["cat"])
         .with_workspaces(["/home/orchestrator/odin-core"]);
@@ -390,8 +390,8 @@ fn stagehand_denies_unresolved_absolute_command_path_fail_closed() {
 }
 
 #[test]
-fn stagehand_denies_quoted_parent_traversal_option_value_without_workspace_policy() {
-    let policy = stagehand_default_policy()
+fn huginn_denies_quoted_parent_traversal_option_value_without_workspace_policy() {
+    let policy = huginn_default_policy()
         .with_enabled(true)
         .with_commands(["cat"]);
 
@@ -408,17 +408,17 @@ fn stagehand_denies_quoted_parent_traversal_option_value_without_workspace_polic
 }
 
 #[test]
-fn stagehand_allows_absolute_positional_path_within_workspace() {
+fn huginn_allows_absolute_positional_path_within_workspace() {
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("clock")
         .as_nanos();
-    let workspace = std::env::temp_dir().join(format!("odin-stagehand-positional-allow-{unique}"));
+    let workspace = std::env::temp_dir().join(format!("odin-huginn-positional-allow-{unique}"));
     let file = workspace.join("input.txt");
     fs::create_dir_all(&workspace).expect("create workspace");
     fs::write(&file, "fixture").expect("write fixture");
 
-    let policy = stagehand_default_policy()
+    let policy = huginn_default_policy()
         .with_enabled(true)
         .with_commands(["cat"])
         .with_workspaces([workspace.to_string_lossy().to_string()]);
@@ -439,19 +439,19 @@ fn stagehand_allows_absolute_positional_path_within_workspace() {
 }
 
 #[test]
-fn stagehand_denies_attached_short_option_absolute_path_outside_workspace() {
+fn huginn_denies_attached_short_option_absolute_path_outside_workspace() {
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("clock")
         .as_nanos();
-    let allowed_workspace = std::env::temp_dir().join(format!("odin-stagehand-allowed-{unique}"));
-    let outside_workspace = std::env::temp_dir().join(format!("odin-stagehand-outside-{unique}"));
+    let allowed_workspace = std::env::temp_dir().join(format!("odin-huginn-allowed-{unique}"));
+    let outside_workspace = std::env::temp_dir().join(format!("odin-huginn-outside-{unique}"));
     let outside_file = outside_workspace.join("secret.txt");
     fs::create_dir_all(&allowed_workspace).expect("create allowed workspace");
     fs::create_dir_all(&outside_workspace).expect("create outside workspace");
     fs::write(&outside_file, "secret").expect("write outside fixture");
 
-    let policy = stagehand_default_policy()
+    let policy = huginn_default_policy()
         .with_enabled(true)
         .with_commands(["cat"])
         .with_workspaces([allowed_workspace.to_string_lossy().to_string()]);
@@ -473,8 +473,8 @@ fn stagehand_denies_attached_short_option_absolute_path_outside_workspace() {
 }
 
 #[test]
-fn stagehand_denies_command_when_workspace_policy_missing() {
-    let policy = stagehand_default_policy()
+fn huginn_denies_command_when_workspace_policy_missing() {
+    let policy = huginn_default_policy()
         .with_enabled(true)
         .with_commands(["cat"]);
 
@@ -489,9 +489,9 @@ fn stagehand_denies_command_when_workspace_policy_missing() {
 }
 
 #[test]
-fn stagehand_trusted_envelope_requires_explicit_enable_capability() {
+fn huginn_trusted_envelope_requires_explicit_enable_capability() {
     let envelope = PluginPermissionEnvelope {
-        plugin: "stagehand".to_string(),
+        plugin: "huginn".to_string(),
         trust_level: TrustLevel::Trusted,
         permissions: vec![DelegationCapability {
             id: "browser.observe".to_string(),
@@ -499,7 +499,7 @@ fn stagehand_trusted_envelope_requires_explicit_enable_capability() {
         }],
     };
 
-    let policy = stagehand_policy_from_envelope(&envelope);
+    let policy = huginn_policy_from_envelope(&envelope);
     let decision = policy.evaluate(Action::ObserveUrl("https://example.com".to_string()));
 
     assert_eq!(
@@ -511,13 +511,13 @@ fn stagehand_trusted_envelope_requires_explicit_enable_capability() {
 }
 
 #[test]
-fn non_stagehand_envelope_cannot_enable_stagehand_policy() {
+fn non_huginn_envelope_cannot_enable_huginn_policy() {
     let envelope = PluginPermissionEnvelope {
-        plugin: "not-stagehand".to_string(),
+        plugin: "not-huginn".to_string(),
         trust_level: TrustLevel::Trusted,
         permissions: vec![
             DelegationCapability {
-                id: "stagehand.enabled".to_string(),
+                id: "huginn.enabled".to_string(),
                 scope: vec![],
             },
             DelegationCapability {
@@ -527,7 +527,7 @@ fn non_stagehand_envelope_cannot_enable_stagehand_policy() {
         ],
     };
 
-    let policy = stagehand_policy_from_envelope(&envelope);
+    let policy = huginn_policy_from_envelope(&envelope);
     let decision = policy.evaluate(Action::ObserveUrl("https://example.com".to_string()));
 
     assert_eq!(

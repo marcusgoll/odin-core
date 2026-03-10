@@ -75,13 +75,13 @@ fn governance_install_requires_ack_for_untrusted() {
 
 #[test]
 #[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
-fn governance_enable_plugin_stagehand_requires_explicit_domains_and_workspaces() {
+fn governance_enable_plugin_huginn_requires_explicit_domains_and_workspaces() {
     let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
         .args([
             "governance",
             "enable-plugin",
             "--plugin",
-            "Stagehand",
+            "Huginn",
             "--run-once",
         ])
         .output()
@@ -89,7 +89,7 @@ fn governance_enable_plugin_stagehand_requires_explicit_domains_and_workspaces()
 
     assert!(
         !output.status.success(),
-        "stagehand enable should be blocked without policy scope"
+        "huginn enable should be blocked without policy scope"
     );
 
     let json = parse_stdout_json(&output);
@@ -282,13 +282,13 @@ fn governance_dispatch_scans_past_unknown_leading_args() {
 
 #[test]
 #[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
-fn governance_enable_plugin_stagehand_allows_url_form_domain_probe() {
+fn governance_enable_plugin_huginn_allows_url_form_domain_probe() {
     let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
         .args([
             "governance",
             "enable-plugin",
             "--plugin",
-            "stagehand",
+            "huginn",
             "--domains",
             "https://example.com",
             "--workspaces",
@@ -296,11 +296,11 @@ fn governance_enable_plugin_stagehand_allows_url_form_domain_probe() {
             "--run-once",
         ])
         .output()
-        .expect("run stagehand enable with url domain");
+        .expect("run huginn enable with url domain");
 
     assert!(
         output.status.success(),
-        "stagehand enable should succeed with required policy inputs"
+        "huginn enable should succeed with required policy inputs"
     );
 
     let json = parse_stdout_json(&output);
@@ -317,13 +317,13 @@ fn governance_enable_plugin_stagehand_allows_url_form_domain_probe() {
 
 #[test]
 #[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
-fn governance_enable_plugin_stagehand_returns_blocked_when_policy_checks_deny() {
+fn governance_enable_plugin_huginn_returns_blocked_when_policy_checks_deny() {
     let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
         .args([
             "governance",
             "enable-plugin",
             "--plugin",
-            "stagehand",
+            "huginn",
             "--domains",
             "/",
             "--workspaces",
@@ -331,11 +331,11 @@ fn governance_enable_plugin_stagehand_returns_blocked_when_policy_checks_deny() 
             "--run-once",
         ])
         .output()
-        .expect("run stagehand enable with denied policy checks");
+        .expect("run huginn enable with denied policy checks");
 
     assert!(
         !output.status.success(),
-        "stagehand enable should fail when checks deny"
+        "huginn enable should fail when checks deny"
     );
 
     let json = parse_stdout_json(&output);
@@ -351,13 +351,13 @@ fn governance_enable_plugin_stagehand_returns_blocked_when_policy_checks_deny() 
 
 #[test]
 #[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
-fn governance_enable_plugin_stagehand_blocks_when_later_values_deny() {
+fn governance_enable_plugin_huginn_blocks_when_later_values_deny() {
     let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
         .args([
             "governance",
             "enable-plugin",
             "--plugin",
-            "stagehand",
+            "huginn",
             "--domains",
             "example.com,/",
             "--workspaces",
@@ -365,11 +365,11 @@ fn governance_enable_plugin_stagehand_blocks_when_later_values_deny() {
             "--run-once",
         ])
         .output()
-        .expect("run stagehand enable with mixed valid/invalid values");
+        .expect("run huginn enable with mixed valid/invalid values");
 
     assert!(
         !output.status.success(),
-        "stagehand enable should fail when any later value is denied"
+        "huginn enable should fail when any later value is denied"
     );
 
     let json = parse_stdout_json(&output);
@@ -385,13 +385,13 @@ fn governance_enable_plugin_stagehand_blocks_when_later_values_deny() {
 
 #[test]
 #[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
-fn governance_enable_plugin_stagehand_blocks_when_command_scope_denies() {
+fn governance_enable_plugin_huginn_blocks_when_command_scope_denies() {
     let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
         .args([
             "governance",
             "enable-plugin",
             "--plugin",
-            "stagehand",
+            "huginn",
             "--domains",
             "example.com",
             "--workspaces",
@@ -401,11 +401,11 @@ fn governance_enable_plugin_stagehand_blocks_when_command_scope_denies() {
             "--run-once",
         ])
         .output()
-        .expect("run stagehand enable with denied command scope");
+        .expect("run huginn enable with denied command scope");
 
     assert!(
         !output.status.success(),
-        "stagehand enable should fail when any command check denies"
+        "huginn enable should fail when any command check denies"
     );
 
     let json = parse_stdout_json(&output);

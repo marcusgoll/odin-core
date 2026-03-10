@@ -102,16 +102,16 @@ fn denies_capability_not_in_manifest() {
 }
 
 #[test]
-fn denies_stagehand_for_non_browser_agent() {
+fn denies_huginn_for_non_browser_agent() {
     let mut policy = StaticPolicyEngine::default();
-    policy.allow_capability("example.safe-github", "demo", "stagehand.observe_url");
+    policy.allow_capability("example.safe-github", "demo", "huginn.observe_url");
 
     let audit = MemoryAuditSink::default();
     let runtime = OrchestratorRuntime::new(policy, audit.clone(), DryRunExecutor);
     let outcome = runtime
         .handle_action_with_manifest(
-            request_for("example.safe-github", "stagehand.observe_url"),
-            &manifest_allowing("example.safe-github", "stagehand.observe_url"),
+            request_for("example.safe-github", "huginn.observe_url"),
+            &manifest_allowing("example.safe-github", "huginn.observe_url"),
         )
         .expect("outcome");
 
@@ -124,21 +124,21 @@ fn denies_stagehand_for_non_browser_agent() {
 }
 
 #[test]
-fn denies_unknown_stagehand_capability_fail_closed() {
+fn denies_unknown_huginn_capability_fail_closed() {
     let mut policy = StaticPolicyEngine::default();
-    policy.allow_capability("stagehand", "demo", "stagehand.superpower");
+    policy.allow_capability("huginn", "demo", "huginn.superpower");
 
     let audit = MemoryAuditSink::default();
     let runtime = OrchestratorRuntime::new(policy, audit.clone(), DryRunExecutor);
     let outcome = runtime
         .handle_action_with_manifest(
-            request_for("stagehand", "stagehand.superpower"),
-            &manifest_allowing("stagehand", "stagehand.superpower"),
+            request_for("huginn", "huginn.superpower"),
+            &manifest_allowing("huginn", "huginn.superpower"),
         )
         .expect("outcome");
 
     assert_eq!(outcome.status, ActionStatus::Blocked);
-    assert_eq!(outcome.detail, "manifest_stagehand_capability_unknown");
+    assert_eq!(outcome.detail, "manifest_huginn_capability_unknown");
     assert!(audit
         .events()
         .iter()
@@ -244,21 +244,21 @@ fn emits_manifest_validated_and_capability_used_events_on_success() {
 }
 
 #[test]
-fn executes_stagehand_observe_domain_with_domain_input() {
+fn executes_huginn_observe_domain_with_domain_input() {
     let mut policy = StaticPolicyEngine::default();
-    policy.allow_capability("stagehand", "demo", "stagehand.observe_domain");
+    policy.allow_capability("huginn", "demo", "huginn.observe_domain");
 
     let audit = MemoryAuditSink::default();
     let runtime = OrchestratorRuntime::new(policy, audit.clone(), DryRunExecutor);
     let outcome = runtime
         .handle_action_with_manifest(
             ActionRequest {
-                request_id: "req-stagehand-observe-domain".to_string(),
+                request_id: "req-huginn-observe-domain".to_string(),
                 risk_tier: RiskTier::Safe,
                 capability: CapabilityRequest {
-                    plugin: "stagehand".to_string(),
+                    plugin: "huginn".to_string(),
                     project: "demo".to_string(),
-                    capability: "stagehand.observe_domain".to_string(),
+                    capability: "huginn.observe_domain".to_string(),
                     scope: vec!["example.com".to_string()],
                     reason: "unit test".to_string(),
                 },
@@ -268,14 +268,14 @@ fn executes_stagehand_observe_domain_with_domain_input() {
             },
             &CapabilityManifest {
                 schema_version: 1,
-                plugin: "stagehand".to_string(),
+                plugin: "huginn".to_string(),
                 capabilities: vec![
                     DelegationCapability {
-                        id: "stagehand.enabled".to_string(),
+                        id: "huginn.enabled".to_string(),
                         scope: vec![],
                     },
                     DelegationCapability {
-                        id: "stagehand.observe_domain".to_string(),
+                        id: "huginn.observe_domain".to_string(),
                         scope: vec!["example.com".to_string()],
                     },
                 ],
