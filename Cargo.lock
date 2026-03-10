@@ -483,6 +483,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "odin-audit",
+ "odin-capacity",
  "odin-compat-bash",
  "odin-core-runtime",
  "odin-governance",
@@ -492,6 +493,7 @@ dependencies = [
  "predicates",
  "roxmltree",
  "serde_json",
+ "serde_yml",
  "tempfile",
  "tracing",
 ]

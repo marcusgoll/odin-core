@@ -1490,7 +1490,7 @@ fn handle_capacity_command(command: CapacityCommand) -> anyhow::Result<()> {
             };
 
             // Load config or use defaults
-            let (cap_config, cb_config, overflow_config) = if let Some(config_path) = capacity_config {
+            let (cap_config, cb_config, overflow_config) = if let Some(ref config_path) = capacity_config {
                 let config_raw = fs::read_to_string(&config_path)
                     .with_context(|| format!("reading config: {}", config_path.display()))?;
                 let config_val: Value = serde_yml::from_str(&config_raw)
@@ -1514,16 +1514,37 @@ fn handle_capacity_command(command: CapacityCommand) -> anyhow::Result<()> {
                 )
             };
 
-            let scheduler = odin_capacity::scheduler::Scheduler {
-                capacity_config: cap_config,
-                cb_config,
-                overflow_config,
-                role_priority: vec![
+            // Load role_priority from config YAML if present, else default
+            let role_priority = if let Some(ref config_path) = capacity_config {
+                let rp_raw = fs::read_to_string(config_path).ok();
+                rp_raw.and_then(|raw| {
+                    let yml_val: serde_yml::Value = serde_yml::from_str(&raw).ok()?;
+                    yml_val["capacity"]["role_priority"]
+                        .as_sequence()
+                        .map(|seq| {
+                            seq.iter()
+                                .filter_map(|v| v.as_str().map(String::from))
+                                .collect::<Vec<_>>()
+                        })
+                })
+            } else {
+                None
+            }
+            .unwrap_or_else(|| {
+                vec![
                     "ops".into(),
                     "developer".into(),
                     "qa-lead".into(),
                     "strategist".into(),
-                ],
+                    "sm".into(),
+                ]
+            });
+
+            let scheduler = odin_capacity::scheduler::Scheduler {
+                capacity_config: cap_config,
+                cb_config,
+                overflow_config,
+                role_priority,
             };
 
             let cost_controller = odin_capacity::cost_controller::CostController::new(
