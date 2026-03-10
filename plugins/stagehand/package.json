@@ -22,8 +22,8 @@
     "serve": "node dist/index.js serve"
   },
   "dependencies": {
-    "@browserbasehq/stagehand": "^2",
-    "zod": "^3.24"
+    "@browserbasehq/stagehand": "^2.5.8",
+    "zod": "3.25.67"
   },
   "devDependencies": {
     "@types/node": "^22",
