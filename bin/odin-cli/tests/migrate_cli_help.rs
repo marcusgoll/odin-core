@@ -51,6 +51,19 @@ fn migrate_help_surface_is_available() {
 }
 
 #[test]
+fn capacity_help_surface_is_available() {
+    let output = run_cli(&["capacity", "--help"]).expect("odin-cli should return promptly");
+    assert!(output.status.success(), "stdout:\n{}", stdout_text(&output));
+
+    let stdout = stdout_text(&output);
+    assert!(
+        stdout.contains("Usage: odin-cli capacity"),
+        "expected usage line in:\n{stdout}"
+    );
+    assert!(stdout.contains("schedule"), "expected schedule subcommand in:\n{stdout}");
+}
+
+#[test]
 fn migrate_export_help_surface_is_available() {
     let output =
         run_cli(&["migrate", "export", "--help"]).expect("odin-cli should return promptly");
