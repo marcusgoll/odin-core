@@ -25,7 +25,6 @@ fn parse_stdout_json(output: &Output) -> Value {
 }
 
 #[test]
-#[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
 fn governance_discover_prints_candidates() {
     let temp_dir = TempDir::new().expect("create temp dir");
     let registry_path = write_project_registry(&temp_dir);
@@ -47,7 +46,6 @@ fn governance_discover_prints_candidates() {
 }
 
 #[test]
-#[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
 fn governance_install_requires_ack_for_untrusted() {
     let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
         .args([
@@ -74,7 +72,6 @@ fn governance_install_requires_ack_for_untrusted() {
 }
 
 #[test]
-#[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
 fn governance_enable_plugin_huginn_requires_explicit_domains_and_workspaces() {
     let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
         .args([
@@ -100,7 +97,6 @@ fn governance_enable_plugin_huginn_requires_explicit_domains_and_workspaces() {
 }
 
 #[test]
-#[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
 fn governance_verify_prints_pass_fail_checks() {
     let temp_dir = TempDir::new().expect("create temp dir");
     let registry_path = write_project_registry(&temp_dir);
@@ -133,7 +129,6 @@ fn governance_verify_prints_pass_fail_checks() {
 }
 
 #[test]
-#[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
 fn governance_verify_without_registry_uses_non_example_default_and_fails_when_missing() {
     let temp_dir = TempDir::new().expect("create temp dir");
 
@@ -162,7 +157,6 @@ fn governance_verify_without_registry_uses_non_example_default_and_fails_when_mi
 }
 
 #[test]
-#[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
 fn governance_discover_invalid_scope_returns_json_error() {
     let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
         .args(["governance", "discover", "--scope", "invalid", "--run-once"])
@@ -178,7 +172,6 @@ fn governance_discover_invalid_scope_returns_json_error() {
 }
 
 #[test]
-#[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
 fn governance_install_invalid_trust_level_returns_json_error() {
     let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
         .args([
@@ -202,7 +195,6 @@ fn governance_install_invalid_trust_level_returns_json_error() {
 }
 
 #[test]
-#[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
 fn governance_discover_missing_required_value_returns_json_error() {
     let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
         .args(["governance", "discover", "--scope", "--run-once"])
@@ -221,7 +213,6 @@ fn governance_discover_missing_required_value_returns_json_error() {
 }
 
 #[test]
-#[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
 fn governance_dispatch_handles_global_flag_before_subcommand() {
     let temp_dir = TempDir::new().expect("create temp dir");
     let registry_path = write_project_registry(&temp_dir);
@@ -250,38 +241,45 @@ fn governance_dispatch_handles_global_flag_before_subcommand() {
 }
 
 #[test]
-#[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
-fn governance_dispatch_scans_past_unknown_leading_args() {
-    let temp_dir = TempDir::new().expect("create temp dir");
-    let registry_path = write_project_registry(&temp_dir);
-
+fn governance_does_not_hijack_non_governance_command_arguments() {
     let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
-        .args([
-            "--unknown",
-            "foo",
-            "governance",
-            "verify",
-            "--scope",
-            "project",
-            "--registry",
-        ])
-        .arg(&registry_path)
-        .arg("--run-once")
+        .args(["connect", "governance", "api", "--dry-run", "--run-once"])
         .output()
-        .expect("run verify with unknown leading args");
+        .expect("run connect with governance as provider value");
 
     assert!(
-        !output.status.success(),
-        "verify should still run and fail checks for this registry"
+        output.status.success(),
+        "connect should remain a normal bootstrap command"
     );
 
-    let json = parse_stdout_json(&output);
-    assert_eq!(json["command"], "verify");
-    assert!(json["checks"].is_array());
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    assert!(
+        stdout.contains("DRY-RUN connect provider=governance auth=api"),
+        "expected connect output, got: {stdout}"
+    );
 }
 
 #[test]
-#[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
+fn governance_help_prints_usage() {
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
+        .args(["governance", "--help"])
+        .output()
+        .expect("run governance help");
+
+    assert!(output.status.success(), "governance help should succeed");
+
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    assert!(
+        stdout.contains("Usage: odin-cli governance <command> [options]"),
+        "expected governance usage, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("enable-plugin"),
+        "expected governance commands list, got: {stdout}"
+    );
+}
+
+#[test]
 fn governance_enable_plugin_huginn_allows_url_form_domain_probe() {
     let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
         .args([
@@ -316,7 +314,6 @@ fn governance_enable_plugin_huginn_allows_url_form_domain_probe() {
 }
 
 #[test]
-#[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
 fn governance_enable_plugin_huginn_returns_blocked_when_policy_checks_deny() {
     let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
         .args([
@@ -350,7 +347,6 @@ fn governance_enable_plugin_huginn_returns_blocked_when_policy_checks_deny() {
 }
 
 #[test]
-#[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
 fn governance_enable_plugin_huginn_blocks_when_later_values_deny() {
     let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
         .args([
@@ -384,7 +380,6 @@ fn governance_enable_plugin_huginn_blocks_when_later_values_deny() {
 }
 
 #[test]
-#[ignore = "governance subcommand lost during PR #10 merge; re-enable after restoring governance CLI"]
 fn governance_enable_plugin_huginn_blocks_when_command_scope_denies() {
     let output = Command::new(assert_cmd::cargo::cargo_bin!("odin-cli"))
         .args([

@@ -17,8 +17,18 @@ use odin_compat_bash::{
 use odin_core_runtime::{
     BackendState, DryRunExecutor, ExternalProcessPluginRunner, OrchestratorRuntime, TaskIngress,
 };
-use odin_plugin_protocol::{ActionRequest, CapabilityRequest, RiskTier};
+use odin_governance::import::{evaluate_install, Ack, InstallGateStatus, SkillImportCandidate};
+use odin_governance::plugins::{
+    huginn_policy_from_envelope, Action as HuginnAction, PermissionDecision as HuginnDecision,
+};
+use odin_governance::risk_scan::{RiskCategory, RiskFinding};
+use odin_governance::skills::{load_global_registry, load_project_registry, load_user_registry};
+use odin_plugin_protocol::{
+    ActionRequest, CapabilityRequest, DelegationCapability, PluginPermissionEnvelope, RiskTier,
+    SkillRecord, SkillScope, TrustLevel,
+};
 use odin_policy_engine::StaticPolicyEngine;
+use serde_json::{json, Value};
 
 #[derive(Clone, Debug)]
 struct CliConfig {
@@ -351,18 +361,788 @@ fn parse_error_targets_native_contract(raw_args: &[String]) -> bool {
 
         return matches!(
             arg,
-            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify" | "skill" | "migrate"
+            "connect"
+                | "start"
+                | "tui"
+                | "inbox"
+                | "gateway"
+                | "verify"
+                | "skill"
+                | "migrate"
+                | "governance"
         );
     }
 
     if let Some(token) = raw_args.get(idx).map(String::as_str) {
         return matches!(
             token,
-            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify" | "skill" | "migrate"
+            "connect"
+                | "start"
+                | "tui"
+                | "inbox"
+                | "gateway"
+                | "verify"
+                | "skill"
+                | "migrate"
+                | "governance"
         );
     }
 
     false
+}
+
+enum GovernanceBody {
+    Json(Value),
+    Text(String),
+}
+
+struct GovernanceOutcome {
+    exit_code: i32,
+    body: GovernanceBody,
+}
+
+fn governance_command_index(raw_args: &[String]) -> Option<usize> {
+    let mut idx = 0usize;
+
+    while idx < raw_args.len() {
+        let token = raw_args[idx].as_str();
+        match token {
+            "--run-once" => idx += 1,
+            "--config" | "--legacy-root" | "--legacy-odin-dir" | "--plugins-root"
+            | "--task-file" => idx += 2,
+            _ if token.starts_with("--config=")
+                || token.starts_with("--legacy-root=")
+                || token.starts_with("--legacy-odin-dir=")
+                || token.starts_with("--plugins-root=")
+                || token.starts_with("--task-file=") =>
+            {
+                idx += 1;
+            }
+            "governance" => return Some(idx),
+            _ => return None,
+        }
+    }
+
+    None
+}
+
+fn governance_help_text(subcommand: Option<&str>) -> String {
+    match subcommand {
+        Some("discover") => "\
+Usage: odin-cli governance discover --scope <global|project|user> [--registry <path>]
+
+Print registered skill candidates for the selected scope.
+"
+        .to_string(),
+        Some("install") => "\
+Usage: odin-cli governance install --name <skill> --trust-level <trusted|caution|untrusted> [--ack]
+
+Evaluate install gates for a skill candidate and report required acknowledgements.
+"
+        .to_string(),
+        Some("verify") => "\
+Usage: odin-cli governance verify --scope <global|project|user> [--registry <path>]
+
+Run governance verification checks for a skill registry.
+"
+        .to_string(),
+        Some("enable-plugin") => "\
+Usage: odin-cli governance enable-plugin --plugin huginn [--domains <csv>] [--workspaces <csv>] [--commands <csv>]
+
+Evaluate Huginn plugin policy requirements before enabling browser access.
+"
+        .to_string(),
+        _ => "\
+Usage: odin-cli governance <command> [options]
+
+Commands:
+  discover       List registered skill candidates for a governance scope
+  install        Evaluate install gates for a skill candidate
+  verify         Run governance verification checks
+  enable-plugin  Evaluate Huginn plugin policy inputs
+"
+        .to_string(),
+    }
+}
+
+fn skip_global_option(tokens: &[String], idx: &mut usize) -> bool {
+    match tokens.get(*idx).map(String::as_str) {
+        Some("--run-once") => {
+            *idx += 1;
+            true
+        }
+        Some("--config")
+        | Some("--legacy-root")
+        | Some("--legacy-odin-dir")
+        | Some("--plugins-root")
+        | Some("--task-file") => {
+            *idx += 2;
+            true
+        }
+        Some(token)
+            if token.starts_with("--config=")
+                || token.starts_with("--legacy-root=")
+                || token.starts_with("--legacy-odin-dir=")
+                || token.starts_with("--plugins-root=")
+                || token.starts_with("--task-file=") =>
+        {
+            *idx += 1;
+            true
+        }
+        _ => false,
+    }
+}
+
+fn missing_required_value(command: &str, option: &str) -> GovernanceOutcome {
+    GovernanceOutcome {
+        exit_code: 1,
+        body: GovernanceBody::Json(json!({
+            "command": command,
+            "status": "error",
+            "error_code": "missing_required_value",
+            "option": option,
+        })),
+    }
+}
+
+fn governance_error(command: &str, error_code: &str, detail: &str) -> GovernanceOutcome {
+    GovernanceOutcome {
+        exit_code: 1,
+        body: GovernanceBody::Json(json!({
+            "command": command,
+            "status": "error",
+            "error_code": error_code,
+            "detail": detail,
+        })),
+    }
+}
+
+fn governance_scope_as_str(scope: &SkillScope) -> &'static str {
+    match scope {
+        SkillScope::Global => "global",
+        SkillScope::Project => "project",
+        SkillScope::User => "user",
+    }
+}
+
+fn parse_governance_scope(command: &str, value: &str) -> Result<SkillScope, GovernanceOutcome> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "global" => Ok(SkillScope::Global),
+        "project" => Ok(SkillScope::Project),
+        "user" => Ok(SkillScope::User),
+        _ => Err(governance_error(
+            command,
+            "invalid_scope",
+            "unsupported scope",
+        )),
+    }
+}
+
+fn parse_trust_level(command: &str, value: &str) -> Result<TrustLevel, GovernanceOutcome> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "trusted" => Ok(TrustLevel::Trusted),
+        "caution" => Ok(TrustLevel::Caution),
+        "untrusted" => Ok(TrustLevel::Untrusted),
+        _ => Err(governance_error(
+            command,
+            "invalid_trust_level",
+            "unsupported trust level",
+        )),
+    }
+}
+
+fn parse_csv_values(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(|item| item.trim().to_string())
+        .filter(|item| !item.is_empty())
+        .collect()
+}
+
+fn default_registry_path(scope: &SkillScope) -> &'static str {
+    match scope {
+        SkillScope::Global => "config/skills.global.yaml",
+        SkillScope::Project => "config/skills.project.yaml",
+        SkillScope::User => "config/skills.user.yaml",
+    }
+}
+
+fn load_registry(
+    scope: &SkillScope,
+    path: &Path,
+) -> Result<odin_plugin_protocol::SkillRegistry, String> {
+    match scope {
+        SkillScope::Global => load_global_registry(path),
+        SkillScope::Project => load_project_registry(path),
+        SkillScope::User => load_user_registry(path),
+    }
+    .map_err(|err| err.to_string())
+}
+
+fn trust_level_as_str(level: &TrustLevel) -> &'static str {
+    match level {
+        TrustLevel::Trusted => "trusted",
+        TrustLevel::Caution => "caution",
+        TrustLevel::Untrusted => "untrusted",
+    }
+}
+
+fn risk_category_as_str(category: &RiskCategory) -> &'static str {
+    match category {
+        RiskCategory::Shell => "shell",
+        RiskCategory::Network => "network",
+        RiskCategory::Secret => "secret",
+        RiskCategory::Delete => "delete",
+    }
+}
+
+fn risk_finding_json(finding: &RiskFinding) -> Value {
+    json!({
+        "category": risk_category_as_str(&finding.category),
+        "pattern": finding.pattern,
+    })
+}
+
+fn skill_record_json(record: &SkillRecord) -> Value {
+    json!({
+        "name": record.name,
+        "trust_level": trust_level_as_str(&record.trust_level),
+        "source": record.source,
+        "capabilities": record.capabilities,
+    })
+}
+
+fn decision_to_str(decision: &HuginnDecision) -> &'static str {
+    match decision {
+        HuginnDecision::Allow { .. } => "allow",
+        HuginnDecision::Deny { .. } => "deny",
+    }
+}
+
+fn decision_reason(decision: &HuginnDecision) -> &str {
+    match decision {
+        HuginnDecision::Allow { reason_code } | HuginnDecision::Deny { reason_code } => reason_code,
+    }
+}
+
+fn command_value(
+    tokens: &[String],
+    idx: &mut usize,
+    command: &str,
+    option: &str,
+) -> Result<String, GovernanceOutcome> {
+    let Some(value) = tokens.get(*idx + 1) else {
+        return Err(missing_required_value(command, option));
+    };
+    if value.starts_with('-') {
+        return Err(missing_required_value(command, option));
+    }
+    *idx += 2;
+    Ok(value.clone())
+}
+
+fn command_value_or_inline(
+    tokens: &[String],
+    idx: &mut usize,
+    command: &str,
+    option: &str,
+) -> Result<String, GovernanceOutcome> {
+    let token = tokens[*idx].as_str();
+    if let Some(value) = token.strip_prefix(&format!("{option}=")) {
+        *idx += 1;
+        return Ok(value.to_string());
+    }
+    command_value(tokens, idx, command, option)
+}
+
+fn handle_governance_discover(tokens: &[String]) -> GovernanceOutcome {
+    let command = "discover";
+    let mut scope: Option<SkillScope> = None;
+    let mut registry: Option<PathBuf> = None;
+    let mut idx = 0usize;
+
+    if tokens
+        .iter()
+        .any(|token| token == "--help" || token == "-h")
+    {
+        return GovernanceOutcome {
+            exit_code: 0,
+            body: GovernanceBody::Text(governance_help_text(Some(command))),
+        };
+    }
+
+    while idx < tokens.len() {
+        if skip_global_option(tokens, &mut idx) {
+            continue;
+        }
+
+        let token = tokens[idx].as_str();
+        match token {
+            "--scope" => match command_value(tokens, &mut idx, command, "--scope") {
+                Ok(value) => match parse_governance_scope(command, &value) {
+                    Ok(parsed) => scope = Some(parsed),
+                    Err(outcome) => return outcome,
+                },
+                Err(outcome) => return outcome,
+            },
+            "--registry" => match command_value(tokens, &mut idx, command, "--registry") {
+                Ok(value) => registry = Some(PathBuf::from(value)),
+                Err(outcome) => return outcome,
+            },
+            _ if token.starts_with("--scope=") => {
+                let value = token.trim_start_matches("--scope=");
+                match parse_governance_scope(command, value) {
+                    Ok(parsed) => scope = Some(parsed),
+                    Err(outcome) => return outcome,
+                }
+                idx += 1;
+            }
+            _ if token.starts_with("--registry=") => {
+                registry = Some(PathBuf::from(token.trim_start_matches("--registry=")));
+                idx += 1;
+            }
+            _ => return governance_error(command, "unknown_argument", token),
+        }
+    }
+
+    let Some(scope) = scope else {
+        return missing_required_value(command, "--scope");
+    };
+    let registry_path = registry.unwrap_or_else(|| PathBuf::from(default_registry_path(&scope)));
+    match load_registry(&scope, &registry_path) {
+        Ok(registry) => GovernanceOutcome {
+            exit_code: 0,
+            body: GovernanceBody::Json(json!({
+                "command": command,
+                "status": "ok",
+                "scope": governance_scope_as_str(&scope),
+                "registry": registry_path.display().to_string(),
+                "candidates": registry.skills.iter().map(skill_record_json).collect::<Vec<_>>(),
+            })),
+        },
+        Err(detail) => GovernanceOutcome {
+            exit_code: 1,
+            body: GovernanceBody::Json(json!({
+                "command": command,
+                "status": "failed",
+                "error_code": "registry_load_failed",
+                "registry": registry_path.display().to_string(),
+                "detail": detail,
+                "candidates": Vec::<Value>::new(),
+            })),
+        },
+    }
+}
+
+fn handle_governance_install(tokens: &[String]) -> GovernanceOutcome {
+    let command = "install";
+    let mut name: Option<String> = None;
+    let mut trust_level: Option<TrustLevel> = None;
+    let mut ack = false;
+    let mut idx = 0usize;
+
+    if tokens
+        .iter()
+        .any(|token| token == "--help" || token == "-h")
+    {
+        return GovernanceOutcome {
+            exit_code: 0,
+            body: GovernanceBody::Text(governance_help_text(Some(command))),
+        };
+    }
+
+    while idx < tokens.len() {
+        if skip_global_option(tokens, &mut idx) {
+            continue;
+        }
+
+        let token = tokens[idx].as_str();
+        match token {
+            "--name" => match command_value(tokens, &mut idx, command, "--name") {
+                Ok(value) => name = Some(value),
+                Err(outcome) => return outcome,
+            },
+            "--trust-level" => match command_value(tokens, &mut idx, command, "--trust-level") {
+                Ok(value) => match parse_trust_level(command, &value) {
+                    Ok(parsed) => trust_level = Some(parsed),
+                    Err(outcome) => return outcome,
+                },
+                Err(outcome) => return outcome,
+            },
+            "--ack" => {
+                ack = true;
+                idx += 1;
+            }
+            _ if token.starts_with("--name=") => {
+                name = Some(token.trim_start_matches("--name=").to_string());
+                idx += 1;
+            }
+            _ if token.starts_with("--trust-level=") => {
+                match parse_trust_level(command, token.trim_start_matches("--trust-level=")) {
+                    Ok(parsed) => trust_level = Some(parsed),
+                    Err(outcome) => return outcome,
+                }
+                idx += 1;
+            }
+            _ => return governance_error(command, "unknown_argument", token),
+        }
+    }
+
+    let Some(name) = name else {
+        return missing_required_value(command, "--name");
+    };
+    let Some(trust_level) = trust_level else {
+        return missing_required_value(command, "--trust-level");
+    };
+
+    let candidate = SkillImportCandidate {
+        record: SkillRecord {
+            trust_level,
+            source: format!("project:/skills/{name}"),
+            ..SkillRecord::default_for(name)
+        },
+        scripts: Vec::new(),
+        readme: None,
+    };
+
+    match evaluate_install(&candidate, if ack { Ack::Accepted } else { Ack::None }) {
+        Ok(plan) => {
+            let findings = plan
+                .findings
+                .iter()
+                .map(risk_finding_json)
+                .collect::<Vec<_>>();
+
+            match plan.status {
+                InstallGateStatus::Allowed => GovernanceOutcome {
+                    exit_code: 0,
+                    body: GovernanceBody::Json(json!({
+                        "command": command,
+                        "status": "ok",
+                        "reasons": plan.reasons,
+                        "findings": findings,
+                    })),
+                },
+                InstallGateStatus::BlockedAckRequired => GovernanceOutcome {
+                    exit_code: 1,
+                    body: GovernanceBody::Json(json!({
+                        "command": command,
+                        "status": "blocked",
+                        "error_code": "ack_required",
+                        "reasons": plan.reasons,
+                        "findings": findings,
+                    })),
+                },
+            }
+        }
+        Err(err) => governance_error(command, "invalid_name", &err.to_string()),
+    }
+}
+
+fn handle_governance_verify(tokens: &[String]) -> GovernanceOutcome {
+    let command = "verify";
+    let mut scope: Option<SkillScope> = None;
+    let mut registry: Option<PathBuf> = None;
+    let mut idx = 0usize;
+
+    if tokens
+        .iter()
+        .any(|token| token == "--help" || token == "-h")
+    {
+        return GovernanceOutcome {
+            exit_code: 0,
+            body: GovernanceBody::Text(governance_help_text(Some(command))),
+        };
+    }
+
+    while idx < tokens.len() {
+        if skip_global_option(tokens, &mut idx) {
+            continue;
+        }
+
+        let token = tokens[idx].as_str();
+        match token {
+            "--scope" => match command_value(tokens, &mut idx, command, "--scope") {
+                Ok(value) => match parse_governance_scope(command, &value) {
+                    Ok(parsed) => scope = Some(parsed),
+                    Err(outcome) => return outcome,
+                },
+                Err(outcome) => return outcome,
+            },
+            "--registry" => match command_value(tokens, &mut idx, command, "--registry") {
+                Ok(value) => registry = Some(PathBuf::from(value)),
+                Err(outcome) => return outcome,
+            },
+            _ if token.starts_with("--scope=") => {
+                let value = token.trim_start_matches("--scope=");
+                match parse_governance_scope(command, value) {
+                    Ok(parsed) => scope = Some(parsed),
+                    Err(outcome) => return outcome,
+                }
+                idx += 1;
+            }
+            _ if token.starts_with("--registry=") => {
+                registry = Some(PathBuf::from(token.trim_start_matches("--registry=")));
+                idx += 1;
+            }
+            _ => return governance_error(command, "unknown_argument", token),
+        }
+    }
+
+    let Some(scope) = scope else {
+        return missing_required_value(command, "--scope");
+    };
+    let registry_path = registry.unwrap_or_else(|| PathBuf::from(default_registry_path(&scope)));
+    let mut checks = Vec::new();
+
+    match load_registry(&scope, &registry_path) {
+        Ok(registry) => {
+            checks.push(json!({
+                "name": "registry_load",
+                "status": "pass",
+                "detail": "registry loaded",
+            }));
+
+            let has_browser_skill = registry.skills.iter().any(|record| {
+                record
+                    .capabilities
+                    .iter()
+                    .any(|capability| capability.id == "browser.observe")
+            });
+            checks.push(json!({
+                "name": "browser_capability_present",
+                "status": if has_browser_skill { "pass" } else { "fail" },
+                "detail": if has_browser_skill {
+                    "browser capability found"
+                } else {
+                    "no browser.observe capability found in registry"
+                },
+            }));
+
+            let failed = checks.iter().any(|check| check["status"] == "fail");
+            GovernanceOutcome {
+                exit_code: if failed { 1 } else { 0 },
+                body: GovernanceBody::Json(json!({
+                    "command": command,
+                    "status": if failed { "failed" } else { "ok" },
+                    "registry": registry_path.display().to_string(),
+                    "checks": checks,
+                })),
+            }
+        }
+        Err(detail) => {
+            checks.push(json!({
+                "name": "registry_load",
+                "status": "fail",
+                "detail": detail,
+            }));
+            GovernanceOutcome {
+                exit_code: 1,
+                body: GovernanceBody::Json(json!({
+                    "command": command,
+                    "status": "failed",
+                    "registry": registry_path.display().to_string(),
+                    "checks": checks,
+                })),
+            }
+        }
+    }
+}
+
+fn canonicalize_domain_probe(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else {
+        format!("https://{trimmed}")
+    }
+}
+
+fn handle_governance_enable_plugin(tokens: &[String]) -> GovernanceOutcome {
+    let command = "enable-plugin";
+    let mut plugin: Option<String> = None;
+    let mut domains: Vec<String> = Vec::new();
+    let mut workspaces: Vec<String> = Vec::new();
+    let mut commands: Vec<String> = Vec::new();
+    let mut idx = 0usize;
+
+    if tokens
+        .iter()
+        .any(|token| token == "--help" || token == "-h")
+    {
+        return GovernanceOutcome {
+            exit_code: 0,
+            body: GovernanceBody::Text(governance_help_text(Some(command))),
+        };
+    }
+
+    while idx < tokens.len() {
+        if skip_global_option(tokens, &mut idx) {
+            continue;
+        }
+
+        let token = tokens[idx].as_str();
+        match token {
+            "--plugin" => match command_value(tokens, &mut idx, command, "--plugin") {
+                Ok(value) => plugin = Some(value.to_ascii_lowercase()),
+                Err(outcome) => return outcome,
+            },
+            "--domains" => match command_value_or_inline(tokens, &mut idx, command, "--domains") {
+                Ok(value) => domains = parse_csv_values(&value),
+                Err(outcome) => return outcome,
+            },
+            "--workspaces" => {
+                match command_value_or_inline(tokens, &mut idx, command, "--workspaces") {
+                    Ok(value) => workspaces = parse_csv_values(&value),
+                    Err(outcome) => return outcome,
+                }
+            }
+            "--commands" => {
+                match command_value_or_inline(tokens, &mut idx, command, "--commands") {
+                    Ok(value) => commands = parse_csv_values(&value),
+                    Err(outcome) => return outcome,
+                }
+            }
+            _ if token.starts_with("--plugin=") => {
+                plugin = Some(token.trim_start_matches("--plugin=").to_ascii_lowercase());
+                idx += 1;
+            }
+            _ => return governance_error(command, "unknown_argument", token),
+        }
+    }
+
+    let Some(plugin) = plugin else {
+        return missing_required_value(command, "--plugin");
+    };
+    if plugin != "huginn" {
+        return governance_error(command, "unknown_plugin", "only huginn is supported");
+    }
+
+    let mut reasons = Vec::new();
+    if domains.is_empty() {
+        reasons.push("domains_required".to_string());
+    }
+    if workspaces.is_empty() {
+        reasons.push("workspaces_required".to_string());
+    }
+
+    let mut permissions = vec![DelegationCapability {
+        id: "huginn.enabled".to_string(),
+        scope: vec![],
+    }];
+    if !domains.is_empty() {
+        permissions.push(DelegationCapability {
+            id: "browser.observe".to_string(),
+            scope: domains.clone(),
+        });
+    }
+    if !workspaces.is_empty() {
+        permissions.push(DelegationCapability {
+            id: "workspace.read".to_string(),
+            scope: workspaces.clone(),
+        });
+    }
+    if !commands.is_empty() {
+        permissions.push(DelegationCapability {
+            id: "command.run".to_string(),
+            scope: commands.clone(),
+        });
+    }
+
+    let policy = huginn_policy_from_envelope(&PluginPermissionEnvelope {
+        plugin: "huginn".to_string(),
+        trust_level: TrustLevel::Caution,
+        permissions,
+    });
+
+    let mut checks = Vec::new();
+    for domain in &domains {
+        let decision = policy.evaluate(HuginnAction::ObserveUrl(canonicalize_domain_probe(domain)));
+        checks.push(json!({
+            "name": "domain_allowlist",
+            "input": domain,
+            "decision": decision_to_str(&decision),
+            "reason_code": decision_reason(&decision),
+        }));
+    }
+    for workspace in &workspaces {
+        let decision = policy.evaluate(HuginnAction::ReadWorkspace(workspace.clone()));
+        checks.push(json!({
+            "name": "workspace_allowlist",
+            "input": workspace,
+            "decision": decision_to_str(&decision),
+            "reason_code": decision_reason(&decision),
+        }));
+    }
+    for command_value in &commands {
+        let decision = policy.evaluate(HuginnAction::RunCommand(command_value.clone()));
+        checks.push(json!({
+            "name": "command_allowlist",
+            "input": command_value,
+            "decision": decision_to_str(&decision),
+            "reason_code": decision_reason(&decision),
+        }));
+    }
+
+    let has_denied_checks = checks.iter().any(|check| check["decision"] == "deny");
+    if !reasons.is_empty() {
+        return GovernanceOutcome {
+            exit_code: 1,
+            body: GovernanceBody::Json(json!({
+                "command": command,
+                "status": "blocked",
+                "error_code": "policy_requirements_missing",
+                "plugin": plugin,
+                "reasons": reasons,
+                "checks": checks,
+            })),
+        };
+    }
+
+    if has_denied_checks {
+        return GovernanceOutcome {
+            exit_code: 1,
+            body: GovernanceBody::Json(json!({
+                "command": command,
+                "status": "blocked",
+                "plugin": plugin,
+                "checks": checks,
+            })),
+        };
+    }
+
+    GovernanceOutcome {
+        exit_code: 0,
+        body: GovernanceBody::Json(json!({
+            "command": command,
+            "status": "ok",
+            "plugin": plugin,
+            "checks": checks,
+        })),
+    }
+}
+
+fn try_handle_governance_command(raw_args: &[String]) -> Option<GovernanceOutcome> {
+    let governance_idx = governance_command_index(raw_args)?;
+    let Some(subcommand) = raw_args.get(governance_idx + 1).map(String::as_str) else {
+        return Some(GovernanceOutcome {
+            exit_code: 0,
+            body: GovernanceBody::Text(governance_help_text(None)),
+        });
+    };
+    let tokens = &raw_args[governance_idx + 2..];
+
+    Some(match subcommand {
+        "--help" | "-h" => GovernanceOutcome {
+            exit_code: 0,
+            body: GovernanceBody::Text(governance_help_text(None)),
+        },
+        "discover" => handle_governance_discover(tokens),
+        "install" => handle_governance_install(tokens),
+        "verify" => handle_governance_verify(tokens),
+        "enable-plugin" => handle_governance_enable_plugin(tokens),
+        other => governance_error("governance", "unknown_subcommand", other),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -779,6 +1559,18 @@ fn run_legacy_runtime(cfg: CliConfig) -> anyhow::Result<()> {
 
 fn main() -> anyhow::Result<()> {
     let raw_args: Vec<String> = env::args().collect();
+    if let Some(outcome) = try_handle_governance_command(&raw_args[1..]) {
+        match outcome.body {
+            GovernanceBody::Json(body) => {
+                let payload = serde_json::to_string_pretty(&body)
+                    .context("failed to format governance output")?;
+                println!("{payload}");
+            }
+            GovernanceBody::Text(body) => println!("{body}"),
+        }
+        process::exit(outcome.exit_code);
+    }
+
     match Cli::try_parse_from(raw_args.clone()) {
         Ok(cli) => {
             let cfg = CliConfig {
