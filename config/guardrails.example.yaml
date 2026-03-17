@@ -15,7 +15,7 @@ confirm_required:
   - credential_entry
   - external_purchase
 plugins:
-  stagehand:
+  huginn:
     enabled: false
     allowed_domains: []
     allowed_workspaces: []

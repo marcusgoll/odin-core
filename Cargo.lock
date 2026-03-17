@@ -377,6 +377,7 @@ dependencies = [
  "odin-audit",
  "odin-compat-bash",
  "odin-core-runtime",
+ "odin-governance",
  "odin-migration",
  "odin-plugin-protocol",
  "odin-policy-engine",

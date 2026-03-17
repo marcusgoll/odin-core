@@ -29,9 +29,9 @@ run_test \
   "governance_install_requires_ack_for_untrusted"
 
 run_test \
-  "stagehand enable without domains/workspaces -> blocked" \
+  "huginn enable without domains/workspaces -> blocked" \
   "odin-cli" \
-  "governance_enable_plugin_stagehand_requires_explicit_domains_and_workspaces"
+  "governance_enable_plugin_huginn_requires_explicit_domains_and_workspaces"
 
 run_test \
   "capability not in manifest -> blocked" \
@@ -44,6 +44,6 @@ run_test \
   "emits_manifest_validated_and_capability_used_events_on_success"
 
 check_doc "docs/skill-system.md"
-check_doc "docs/stagehand-safety.md"
+check_doc "docs/huginn-safety.md"
 
 echo "[governance-smoke] COMPLETE"

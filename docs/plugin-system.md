@@ -40,12 +40,12 @@ When `InstallRequest.require_signature=true` or manifest `signing.required=true`
 
 - Skill installs and plugin enablement are governed by scoped registries and trust levels (`global`, `project`, `user`).
 - Untrusted/script-bearing skill installs are blocked until explicit acknowledgement is supplied.
-- Stagehand plugin enablement is blocked without explicit domain and workspace allowlists.
+- Huginn plugin enablement is blocked without explicit domain and workspace allowlists.
 
 See:
 
 - `docs/skill-system.md` for trust and install gating workflows
-- `docs/stagehand-safety.md` for Stagehand-specific safety defaults
+- `docs/huginn-safety.md` for Huginn-specific safety defaults
 
 ## Delegation capability manifests
 

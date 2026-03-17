@@ -46,7 +46,7 @@ bash scripts/verify/skill-plugin-governance-smoke.sh
 - `scripts/verify/skill-plugin-governance-smoke.sh` is required for release readiness.
 - Verifies:
   - untrusted skill install without ack is blocked
-  - stagehand enable without domains/workspaces is blocked
+  - huginn enable without domains/workspaces is blocked
   - capability missing from manifest is blocked
   - manifest-granted capability executes
 

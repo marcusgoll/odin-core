@@ -283,7 +283,7 @@ mod tests {
     fn capability_manifest_round_trip() {
         let manifest = CapabilityManifest {
             schema_version: 1,
-            plugin: "stagehand".to_string(),
+            plugin: "huginn".to_string(),
             capabilities: vec![DelegationCapability {
                 id: "browser.observe".to_string(),
                 scope: vec!["example.com".to_string()],
@@ -293,7 +293,7 @@ mod tests {
         let encoded = serde_json::to_string(&manifest).expect("encode");
         let decoded: CapabilityManifest = serde_json::from_str(&encoded).expect("decode");
 
-        assert_eq!(decoded.plugin, "stagehand");
+        assert_eq!(decoded.plugin, "huginn");
         assert_eq!(decoded.capabilities.len(), 1);
         assert_eq!(decoded.capabilities[0].id, "browser.observe");
     }
@@ -301,7 +301,7 @@ mod tests {
     #[test]
     fn plugin_permission_envelope_round_trip() {
         let envelope = PluginPermissionEnvelope {
-            plugin: "stagehand".to_string(),
+            plugin: "huginn".to_string(),
             trust_level: TrustLevel::Caution,
             permissions: vec![DelegationCapability {
                 id: "browser.observe".to_string(),
@@ -312,7 +312,7 @@ mod tests {
         let encoded = serde_json::to_string(&envelope).expect("encode");
         let decoded: PluginPermissionEnvelope = serde_json::from_str(&encoded).expect("decode");
 
-        assert_eq!(decoded.plugin, "stagehand");
+        assert_eq!(decoded.plugin, "huginn");
         assert_eq!(decoded.trust_level, TrustLevel::Caution);
         assert_eq!(decoded.permissions[0].id, "browser.observe");
     }
@@ -355,7 +355,7 @@ mod tests {
     fn capability_manifest_defaults_missing_capabilities_array() {
         let value = json!({
             "schema_version": 1,
-            "plugin": "stagehand"
+            "plugin": "huginn"
         });
 
         let decoded: CapabilityManifest = serde_json::from_value(value).expect("decode");
@@ -365,7 +365,7 @@ mod tests {
     #[test]
     fn plugin_permission_envelope_defaults_missing_permissions_array() {
         let value = json!({
-            "plugin": "stagehand",
+            "plugin": "huginn",
             "trust_level": "caution"
         });
 
