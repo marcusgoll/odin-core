@@ -104,6 +104,42 @@ afterAll(async () => {
   });
 });
 
+describe("HuginnClient timeout", () => {
+  let slowServerUrl = "";
+  let slowServer: ReturnType<typeof createServer>;
+
+  beforeAll(async () => {
+    slowServer = createServer((_req, _res) => {
+      // Intentionally never respond to simulate a hung Huginn server
+    });
+    await new Promise<void>((resolve) => {
+      slowServer.listen(0, "127.0.0.1", () => resolve());
+    });
+    const addr = slowServer.address();
+    if (!addr || typeof addr === "string") throw new Error("expected tcp address");
+    slowServerUrl = `http://127.0.0.1:${addr.port}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve, reject) => {
+      slowServer.close((err) => (err ? reject(err) : resolve()));
+    });
+  });
+
+  it("aborts the request when the server does not respond within navigationTimeoutMs", async () => {
+    const client = new HuginnClient({
+      serverUrl: slowServerUrl,
+      authToken: undefined,
+      defaultBrowser: "chromium",
+      headless: true,
+      navigationTimeoutMs: 50,
+      allowlistedDomains: [],
+    });
+
+    await expect(client.health()).rejects.toThrow();
+  }, 5_000);
+});
+
 describe("HuginnClient", () => {
   it("launches the browser when none is active", async () => {
     browserOpen = false;

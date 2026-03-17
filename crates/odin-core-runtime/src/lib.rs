@@ -723,9 +723,9 @@ fn huginn_action_from_capability(capability: &str, input: &Value) -> Option<Hugi
         "browser.observe" | "huginn.observe_url" => Some(HuginnAction::ObserveUrl(
             input_string(input, "url").unwrap_or_default(),
         )),
-        "huginn.observe_domain" => Some(HuginnAction::ObserveUrl(
-            canonical_observe_domain_input(input),
-        )),
+        "huginn.observe_domain" => Some(HuginnAction::ObserveUrl(canonical_observe_domain_input(
+            input,
+        ))),
         "workspace.read" | "huginn.workspace.read" => Some(HuginnAction::ReadWorkspace(
             input_string(input, "workspace").unwrap_or_default(),
         )),
