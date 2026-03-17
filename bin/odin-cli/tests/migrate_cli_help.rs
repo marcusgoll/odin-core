@@ -67,7 +67,10 @@ fn capacity_help_surface_is_available() {
         stdout.contains("Usage: odin-cli capacity"),
         "expected usage line in:\n{stdout}"
     );
-    assert!(stdout.contains("schedule"), "expected schedule subcommand in:\n{stdout}");
+    assert!(
+        stdout.contains("schedule"),
+        "expected schedule subcommand in:\n{stdout}"
+    );
 }
 
 #[test]

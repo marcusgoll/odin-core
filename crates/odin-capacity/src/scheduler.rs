@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::capacity::{self, CapacityConfig, InfraState};
 use crate::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, State as CbState};
 use crate::cost_controller::{CostController, CostDecision};
-use crate::overflow::{self, OverflowConfig, OverflowDecision};
 use crate::metrics::MetricsExport;
+use crate::overflow::{self, OverflowConfig, OverflowDecision};
 
 /// Input to the scheduler (assembled from filesystem state).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,7 +80,10 @@ impl Scheduler {
                         spawn.push(SpawnDirective {
                             role: role.clone(),
                             target: "local".into(),
-                            reason: format!("scale_up target={} current={}", target, input.agent_count),
+                            reason: format!(
+                                "scale_up target={} current={}",
+                                target, input.agent_count
+                            ),
                         });
                     }
                     CostDecision::Overflow => {
@@ -93,8 +96,7 @@ impl Scheduler {
                             &role,
                             &self.overflow_config,
                         );
-                        if let OverflowDecision::RouteToHetzner { role, reason } =
-                            overflow_decision
+                        if let OverflowDecision::RouteToHetzner { role, reason } = overflow_decision
                         {
                             overflow_directives.push(SpawnDirective {
                                 role,
@@ -110,13 +112,13 @@ impl Scheduler {
 
         let drain = if target < input.agent_count {
             let drain_count = 1.min(input.agent_count - target);
-            vec![DrainDirective {
-                agent_id: String::new(),
-                reason: format!(
-                    "scale_down target={} current={}",
-                    target, input.agent_count
-                ),
-            }; drain_count as usize]
+            vec![
+                DrainDirective {
+                    agent_id: String::new(),
+                    reason: format!("scale_down target={} current={}", target, input.agent_count),
+                };
+                drain_count as usize
+            ]
         } else {
             Vec::new()
         };

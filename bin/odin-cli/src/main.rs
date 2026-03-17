@@ -804,7 +804,7 @@ fn governance_enable_plugin(args: &[String]) -> (Value, i32) {
     let Some(plugin_name) = plugin else {
         return governance_error("enable-plugin", "missing_required_value");
     };
-    if plugin_name.to_ascii_lowercase() != "stagehand" {
+    if !plugin_name.eq_ignore_ascii_case("stagehand") {
         return governance_error("enable-plugin", "unsupported_plugin");
     }
 
@@ -832,7 +832,9 @@ fn governance_enable_plugin(args: &[String]) -> (Value, i32) {
         .with_enabled(true)
         .with_domains(domains.iter().map(String::as_str))
         .with_workspaces(workspaces.iter().map(String::as_str))
-        .with_commands(["ls", "cat", "grep", "sed", "awk", "find", "head", "tail", "wc"]);
+        .with_commands([
+            "ls", "cat", "grep", "sed", "awk", "find", "head", "tail", "wc",
+        ]);
 
     let mut checks = Vec::new();
     let mut denied = false;
@@ -843,7 +845,11 @@ fn governance_enable_plugin(args: &[String]) -> (Value, i32) {
         } else {
             format!("https://{domain}")
         };
-        let check = decision_json("domain_allowlist", domain, policy.evaluate(Action::ObserveUrl(probe)));
+        let check = decision_json(
+            "domain_allowlist",
+            domain,
+            policy.evaluate(Action::ObserveUrl(probe)),
+        );
         if check.get("decision").and_then(Value::as_str) == Some("deny") {
             denied = true;
         }
@@ -1100,14 +1106,30 @@ fn parse_error_targets_native_contract(raw_args: &[String]) -> bool {
 
         return matches!(
             arg,
-            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify" | "skill" | "migrate" | "capacity"
+            "connect"
+                | "start"
+                | "tui"
+                | "inbox"
+                | "gateway"
+                | "verify"
+                | "skill"
+                | "migrate"
+                | "capacity"
         );
     }
 
     if let Some(token) = raw_args.get(idx).map(String::as_str) {
         return matches!(
             token,
-            "connect" | "start" | "tui" | "inbox" | "gateway" | "verify" | "skill" | "migrate" | "capacity"
+            "connect"
+                | "start"
+                | "tui"
+                | "inbox"
+                | "gateway"
+                | "verify"
+                | "skill"
+                | "migrate"
+                | "capacity"
         );
     }
 
@@ -1156,7 +1178,10 @@ fn parse_sass_skill(path: &Path) -> anyhow::Result<SassSkill> {
 
     let mut states = Vec::new();
     if let Some(states_elem) = &states_elem {
-        for state_node in states_elem.children().filter(|node| node.has_tag_name("state")) {
+        for state_node in states_elem
+            .children()
+            .filter(|node| node.has_tag_name("state"))
+        {
             let id = state_node.attribute("id").unwrap_or_default().to_string();
             let is_end = state_node.attribute("end") == Some("true");
             let on_failure = state_node.attribute("on_failure").map(String::from);
@@ -1165,8 +1190,13 @@ fn parse_sass_skill(path: &Path) -> anyhow::Result<SassSkill> {
                 .children()
                 .filter(|node| node.has_tag_name("transition"))
                 .map(|transition| {
-                    let target = transition.attribute("target").unwrap_or_default().to_string();
-                    let has_guard = transition.children().any(|child| child.has_tag_name("guard"));
+                    let target = transition
+                        .attribute("target")
+                        .unwrap_or_default()
+                        .to_string();
+                    let has_guard = transition
+                        .children()
+                        .any(|child| child.has_tag_name("guard"));
                     SassTransition { target, has_guard }
                 })
                 .collect::<Vec<_>>();
@@ -1426,7 +1456,9 @@ fn handle_bootstrap_command(command: CliCommand) -> anyhow::Result<()> {
                 };
                 odin_migration::run(odin_migration::MigrationCommand::Validate { bundle_dir })
             }
-            MigrateSubcommand::Import => odin_migration::run(odin_migration::MigrationCommand::Import),
+            MigrateSubcommand::Import => {
+                odin_migration::run(odin_migration::MigrationCommand::Import)
+            }
             MigrateSubcommand::Unknown(args) => {
                 let name = args
                     .first()
@@ -1458,19 +1490,18 @@ fn handle_capacity_command(command: CapacityCommand) -> anyhow::Result<()> {
             let cost_raw = fs::read_to_string(&cost_state)
                 .with_context(|| format!("reading cost state: {}", cost_state.display()))?;
 
-            let queue_val: Value = serde_json::from_str(&queue_raw)
-                .context("parsing queue state JSON")?;
-            let agent_val: Value = serde_json::from_str(&agent_raw)
-                .context("parsing agent state JSON")?;
-            let infra_val: Value = serde_json::from_str(&infra_raw)
-                .context("parsing infra state JSON")?;
-            let cost_val: Value = serde_json::from_str(&cost_raw)
-                .context("parsing cost state JSON")?;
+            let queue_val: Value =
+                serde_json::from_str(&queue_raw).context("parsing queue state JSON")?;
+            let agent_val: Value =
+                serde_json::from_str(&agent_raw).context("parsing agent state JSON")?;
+            let infra_val: Value =
+                serde_json::from_str(&infra_raw).context("parsing infra state JSON")?;
+            let cost_val: Value =
+                serde_json::from_str(&cost_raw).context("parsing cost state JSON")?;
 
             // Build ScheduleInput from state files
             let queue_depths: std::collections::HashMap<String, u32> =
-                serde_json::from_value(queue_val["queue_depths"].clone())
-                    .unwrap_or_default();
+                serde_json::from_value(queue_val["queue_depths"].clone()).unwrap_or_default();
             let held_depth = queue_val["held_depth"].as_u64().unwrap_or(0) as u32;
             let deferred_depth = queue_val["deferred_depth"].as_u64().unwrap_or(0) as u32;
             let agent_count = agent_val["agent_count"].as_u64().unwrap_or(0) as u32;
@@ -1490,29 +1521,28 @@ fn handle_capacity_command(command: CapacityCommand) -> anyhow::Result<()> {
             };
 
             // Load config or use defaults
-            let (cap_config, cb_config, overflow_config) = if let Some(ref config_path) = capacity_config {
-                let config_raw = fs::read_to_string(&config_path)
-                    .with_context(|| format!("reading config: {}", config_path.display()))?;
-                let config_val: Value = serde_yml::from_str(&config_raw)
-                    .context("parsing capacity config YAML")?;
+            let (cap_config, cb_config, overflow_config) =
+                if let Some(ref config_path) = capacity_config {
+                    let config_raw = fs::read_to_string(config_path)
+                        .with_context(|| format!("reading config: {}", config_path.display()))?;
+                    let config_val: Value =
+                        serde_yml::from_str(&config_raw).context("parsing capacity config YAML")?;
 
-                let cap: odin_capacity::capacity::CapacityConfig =
-                    serde_json::from_value(config_val["capacity"].clone())
-                        .unwrap_or_default();
-                let cb: odin_capacity::circuit_breaker::CircuitBreakerConfig =
-                    serde_json::from_value(config_val["circuit_breaker"].clone())
-                        .unwrap_or_default();
-                let ov: odin_capacity::overflow::OverflowConfig =
-                    serde_json::from_value(config_val["overflow"].clone())
-                        .unwrap_or_default();
-                (cap, cb, ov)
-            } else {
-                (
-                    odin_capacity::capacity::CapacityConfig::default(),
-                    odin_capacity::circuit_breaker::CircuitBreakerConfig::default(),
-                    odin_capacity::overflow::OverflowConfig::default(),
-                )
-            };
+                    let cap: odin_capacity::capacity::CapacityConfig =
+                        serde_json::from_value(config_val["capacity"].clone()).unwrap_or_default();
+                    let cb: odin_capacity::circuit_breaker::CircuitBreakerConfig =
+                        serde_json::from_value(config_val["circuit_breaker"].clone())
+                            .unwrap_or_default();
+                    let ov: odin_capacity::overflow::OverflowConfig =
+                        serde_json::from_value(config_val["overflow"].clone()).unwrap_or_default();
+                    (cap, cb, ov)
+                } else {
+                    (
+                        odin_capacity::capacity::CapacityConfig::default(),
+                        odin_capacity::circuit_breaker::CircuitBreakerConfig::default(),
+                        odin_capacity::overflow::OverflowConfig::default(),
+                    )
+                };
 
             // Load role_priority from config YAML if present, else default
             let role_priority = if let Some(ref config_path) = capacity_config {
@@ -1564,8 +1594,8 @@ fn handle_capacity_command(command: CapacityCommand) -> anyhow::Result<()> {
             }
 
             let decision = scheduler.schedule(&input, &[], &cost_controller, now);
-            let json = serde_json::to_string_pretty(&decision)
-                .context("serializing schedule decision")?;
+            let json =
+                serde_json::to_string_pretty(&decision).context("serializing schedule decision")?;
             println!("{json}");
             Ok(())
         }

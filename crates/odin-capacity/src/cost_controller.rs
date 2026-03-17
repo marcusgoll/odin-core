@@ -119,7 +119,12 @@ impl CostController {
 
         let mut per_role = HashMap::new();
         for (role, &spend) in &self.daily_spend {
-            let ceiling = self.config.per_role_ceiling.get(role).copied().unwrap_or(0.0);
+            let ceiling = self
+                .config
+                .per_role_ceiling
+                .get(role)
+                .copied()
+                .unwrap_or(0.0);
             let pct = if ceiling > 0.0 {
                 (spend / ceiling) * 100.0
             } else {

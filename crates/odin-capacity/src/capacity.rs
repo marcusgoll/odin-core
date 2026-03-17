@@ -52,7 +52,7 @@ pub fn max_agents(infra: &InfraState) -> u32 {
 pub fn compute_target(active_depth: u32, config: &CapacityConfig, infra: &InfraState) -> u32 {
     let infra_max = max_agents(infra).min(config.max_agents);
     let raw = if config.tasks_per_agent > 0 {
-        (active_depth + config.tasks_per_agent - 1) / config.tasks_per_agent
+        active_depth.div_ceil(config.tasks_per_agent)
     } else {
         active_depth
     };
