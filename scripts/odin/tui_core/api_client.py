@@ -53,5 +53,13 @@ def requeue_task(task_id: str) -> dict | None:
     return post(f"/api/v1/tasks/{task_id}/requeue")
 
 
+def cancel_task(task_id: str) -> dict | None:
+    return post(f"/api/v1/tasks/{task_id}/cancel")
+
+
+def restart_agent(name: str) -> dict | None:
+    return post(f"/api/v1/agents/{name}/restart")
+
+
 def send_command(command: str) -> dict | None:
     return post("/api/v1/commands", {"command": command})

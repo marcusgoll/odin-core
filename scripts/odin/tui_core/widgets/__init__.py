@@ -4,5 +4,14 @@ from .inbox_table import InboxTable
 from .agents_table import AgentsTable
 from .event_log import EventLog
 from .approvals_table import ApprovalsTable
+from .detail_modal import DetailModal
+from .header_panel import OdinHeader
 
-__all__ = ["InboxTable", "AgentsTable", "EventLog", "ApprovalsTable"]
+__all__ = [
+    "InboxTable",
+    "AgentsTable",
+    "EventLog",
+    "ApprovalsTable",
+    "DetailModal",
+    "OdinHeader",
+]
