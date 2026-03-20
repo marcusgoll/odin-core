@@ -1,0 +1,47 @@
+#main {
+    height: 1fr;
+}
+
+.column {
+    width: 1fr;
+}
+
+#left {
+    width: 2fr;
+}
+
+#right {
+    width: 1fr;
+}
+
+#command-bar {
+    dock: bottom;
+    height: 1;
+    display: none;
+}
+
+DataTable {
+    height: 1fr;
+    border: solid green;
+}
+
+#inbox-table {
+    border-title-color: green;
+}
+
+#agents-table {
+    border-title-color: cyan;
+}
+
+#approvals-table {
+    border-title-color: yellow;
+}
+
+Log {
+    height: 1fr;
+    border: solid blue;
+}
+
+#event-log {
+    border-title-color: blue;
+}

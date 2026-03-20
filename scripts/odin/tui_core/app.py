@@ -1,189 +1,190 @@
-"""Modular TUI application entrypoint for odin-core."""
+"""Odin Overseer TUI — Textual interactive dashboard."""
 
 from __future__ import annotations
 
-import argparse
-import json
 import os
-import subprocess
-import sys
-import time
-from datetime import datetime, timezone
 from pathlib import Path
 
-from rich.console import Console, Group
-from rich.layout import Layout
-from rich.live import Live
-from rich.panel import Panel
+from textual.app import App, ComposeResult
+from textual.containers import Horizontal, Vertical
+from textual.widgets import Header, Footer, Static, DataTable, Log, Input
+from textual.worker import Worker
+from textual import work
 
-from tui_core.collectors import env_odin_dir
-from tui_core.collectors.agents import collect as collect_agents
-from tui_core.collectors.github import collect as collect_github
-from tui_core.collectors.inbox import collect as collect_inbox
-from tui_core.collectors.kanban import collect as collect_kanban
-from tui_core.collectors.logs import collect as collect_logs
-from tui_core.collectors.orchestrator import collect as collect_orchestrator
-from tui_core.layout import select_layout_mode
-from tui_core.models import PanelData
-from tui_core.panels.agents import render as render_agents
-from tui_core.panels.github import render as render_github
-from tui_core.panels.header import render as render_header
-from tui_core.panels.inbox import render as render_inbox
-from tui_core.panels.kanban import render as render_kanban
-from tui_core.panels.logs import render as render_logs
-from tui_core.profiles import resolve_profile
-
-PANEL_RENDERERS = {
-    "inbox": render_inbox,
-    "kanban": render_kanban,
-    "agents": render_agents,
-    "logs": render_logs,
-    "github": render_github,
-}
+from .collectors import env_odin_dir
+from .collectors.orchestrator import collect as collect_orchestrator
+from .collectors.agents import collect as collect_agents
+from .collectors.inbox import collect as collect_inbox
+from .collectors.logs import collect as collect_logs
+from .collectors.kanban import collect as collect_kanban
+from .collectors.github import collect as collect_github
+from .models import PanelData
 
 
-def _legacy_script_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "odin-tui-legacy.py"
+class OdinTUI(App):
+    """Odin Overseer — interactive terminal dashboard."""
 
+    CSS_PATH = "styles.tcss"
+    TITLE = "Odin Overseer"
+    BINDINGS = [
+        ("q", "focus_queue", "Queue"),
+        ("a", "focus_agents", "Agents"),
+        ("e", "focus_events", "Events"),
+        ("p", "focus_approvals", "Approvals"),
+        ("colon", "focus_command", "Command"),
+        ("question_mark", "show_help", "Help"),
+        ("ctrl+c", "quit", "Quit"),
+    ]
 
-def _run_legacy(args: argparse.Namespace) -> int:
-    cmd = [sys.executable, str(_legacy_script_path())]
-    if args.live:
-        cmd.append("--live")
-    if args.json:
-        cmd.append("--json")
-    env = os.environ.copy()
-    if args.odin_dir:
-        env["ODIN_DIR"] = args.odin_dir
-    completed = subprocess.run(cmd, env=env, check=False)
-    return completed.returncode
+    def __init__(self, odin_dir: Path | None = None, **kwargs):
+        super().__init__(**kwargs)
+        self._odin_dir = odin_dir or env_odin_dir()
+        self._log_seen: set[str] = set()
 
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with Horizontal(id="main"):
+            with Vertical(id="left", classes="column"):
+                yield DataTable(id="inbox-table")
+                yield DataTable(id="agents-table")
+            with Vertical(id="right", classes="column"):
+                yield Log(id="event-log", highlight=True, max_lines=500)
+                yield DataTable(id="approvals-table")
+        yield Input(id="command-bar", placeholder="Type command...")
+        yield Footer()
 
-def _collect_core(odin_dir: Path) -> dict[str, PanelData]:
-    return {
-        "orchestrator": collect_orchestrator(odin_dir),
-        "inbox": collect_inbox(odin_dir),
-        "kanban": collect_kanban(odin_dir),
-        "agents": collect_agents(odin_dir),
-        "logs": collect_logs(odin_dir),
-        "github": collect_github(odin_dir),
-    }
+    def on_mount(self) -> None:
+        """Set up tables and start polling."""
+        inbox_tbl = self.query_one("#inbox-table", DataTable)
+        inbox_tbl.add_columns("Task", "Type", "Source", "Age")
+        inbox_tbl.cursor_type = "row"
+        inbox_tbl.border_title = "Inbox"
 
+        agents_tbl = self.query_one("#agents-table", DataTable)
+        agents_tbl.add_columns("Agent", "Role", "State", "Task")
+        agents_tbl.cursor_type = "row"
+        agents_tbl.border_title = "Agents"
 
-def _render_core(data: dict[str, PanelData], profile: dict, width: int, height: int):
-    mode = select_layout_mode(width)
-    panels = profile.get("panels", [])
-    orchestrator = data["orchestrator"]
+        approvals_tbl = self.query_one("#approvals-table", DataTable)
+        approvals_tbl.add_columns("Task", "Risk", "Status", "Created")
+        approvals_tbl.cursor_type = "row"
+        approvals_tbl.border_title = "Approvals"
 
-    header = render_header(
-        profile_name=profile["name"],
-        heartbeat=str(orchestrator.items[1]["value"] if len(orchestrator.items) > 1 else "n/a"),
-        pending=int(data["inbox"].meta.get("pending", 0)),
-        total_agents=int(data["agents"].meta.get("count", 0)),
-        layout_mode=mode,
-    )
+        event_log = self.query_one("#event-log", Log)
+        event_log.border_title = "Events"
 
-    panel_map: dict[str, Panel] = {}
-    for panel_key in panels:
-        renderer = PANEL_RENDERERS.get(panel_key)
-        if renderer is None:
-            continue
-        panel_map[panel_key] = renderer(data[panel_key])
+        # Initial data load + periodic refresh
+        self.refresh_data()
+        self.set_interval(5.0, self.refresh_data)
 
-    def p(key: str) -> Panel:
-        return panel_map.get(key, Panel("disabled", title=key))
-
-    if mode == "narrow":
-        ordered = [header] + [p(name) for name in panels if name in panel_map]
-        return Group(*ordered)
-
-    layout = Layout()
-    layout.split_column(
-        Layout(header, name="header", size=4),
-        Layout(name="body"),
-    )
-
-    if mode == "medium":
-        layout["body"].split_row(
-            Layout(Group(p("inbox"), p("kanban")), name="left", ratio=2),
-            Layout(Group(p("agents"), p("logs"), p("github")), name="right", ratio=2),
+    @work(thread=True)
+    def refresh_data(self) -> None:
+        """Collect data from all sources in a background thread."""
+        odin_dir = self._odin_dir
+        inbox_data = collect_inbox(odin_dir)
+        agents_data = collect_agents(odin_dir)
+        logs_data = collect_logs(odin_dir)
+        health_data = collect_orchestrator(odin_dir)
+        self.call_from_thread(
+            self._update_panels, inbox_data, agents_data, logs_data, health_data
         )
-        return layout
 
-    # wide
-    layout["body"].split_column(
-        Layout(name="middle", ratio=2),
-        Layout(name="bottom", ratio=2),
-    )
-    layout["body"]["middle"].split_row(
-        Layout(p("inbox"), name="inbox", ratio=2),
-        Layout(p("kanban"), name="kanban", ratio=2),
-        Layout(p("agents"), name="agents", ratio=2),
-    )
-    layout["body"]["bottom"].split_row(
-        Layout(p("logs"), name="logs", ratio=3),
-        Layout(p("github"), name="github", ratio=1),
-    )
-    return layout
+    def _update_panels(
+        self,
+        inbox_data: PanelData,
+        agents_data: PanelData,
+        logs_data: PanelData,
+        health_data: PanelData,
+    ) -> None:
+        """Update all panels with freshly collected data (runs on UI thread)."""
+        # Update inbox table
+        tbl = self.query_one("#inbox-table", DataTable)
+        tbl.clear()
+        for item in inbox_data.items:
+            tbl.add_row(
+                item.get("task_id", ""),
+                item.get("task_label", item.get("type", "")),
+                item.get("source", ""),
+                item.get("age", ""),
+            )
+        tbl.border_title = f"Inbox ({inbox_data.meta.get('pending', 0)})"
+
+        # Update agents table
+        tbl = self.query_one("#agents-table", DataTable)
+        tbl.clear()
+        for item in agents_data.items:
+            tbl.add_row(
+                item.get("name", ""),
+                item.get("role", ""),
+                item.get("state", ""),
+                item.get("task", ""),
+            )
+        busy = agents_data.meta.get("busy", 0)
+        total = agents_data.meta.get("count", 0)
+        tbl.border_title = f"Agents ({busy}/{total} busy)"
+
+        # Update event log — append only new lines to avoid duplication
+        log = self.query_one("#event-log", Log)
+        for item in logs_data.items:
+            ts = item.get("time", "")
+            src = item.get("source", "")
+            msg = item.get("message", "")
+            line_key = f"{item.get('ts', '')}|{src}|{msg}"
+            if line_key not in self._log_seen:
+                self._log_seen.add(line_key)
+                log.write_line(f"[{ts}] [{src}] {msg}")
+
+        # Update header subtitle with orchestrator health
+        if health_data.items:
+            health = health_data.items[0].get("value", "unknown")
+            heartbeat = health_data.items[1].get("value", "n/a") if len(health_data.items) > 1 else "n/a"
+            self.sub_title = f"Health: {health} | Heartbeat: {heartbeat}"
+
+    def action_focus_queue(self) -> None:
+        """Focus the inbox table."""
+        self.query_one("#inbox-table").focus()
+
+    def action_focus_agents(self) -> None:
+        """Focus the agents table."""
+        self.query_one("#agents-table").focus()
+
+    def action_focus_events(self) -> None:
+        """Focus the event log."""
+        self.query_one("#event-log").focus()
+
+    def action_focus_approvals(self) -> None:
+        """Focus the approvals table."""
+        self.query_one("#approvals-table").focus()
+
+    def action_focus_command(self) -> None:
+        """Show and focus the command bar."""
+        cmd = self.query_one("#command-bar", Input)
+        cmd.display = True
+        cmd.focus()
+
+    def action_show_help(self) -> None:
+        """Display help overlay (placeholder)."""
+        self.notify(
+            "Keys: [q]ueue [a]gents [e]vents [p]approvals [:]cmd [Ctrl+C]quit",
+            title="Help",
+            timeout=5,
+        )
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle command bar submission."""
+        cmd = event.value.strip()
+        command_bar = self.query_one("#command-bar", Input)
+        command_bar.value = ""
+        command_bar.display = False
+        if cmd:
+            self.notify(f"Command: {cmd}", title="Command", timeout=3)
 
 
-def _json_output(profile: dict, data: dict[str, PanelData]) -> str:
-    payload = {
-        "profile": profile["name"],
-        "collected_at": datetime.now(tz=timezone.utc).isoformat().replace("+00:00", "Z"),
-        "orchestrator": data["orchestrator"].to_dict(),
-        "inbox": data["inbox"].to_dict(),
-        "kanban": data["kanban"].to_dict(),
-        "agents": data["agents"].to_dict(),
-        "logs": data["logs"].to_dict(),
-        "github": data["github"].to_dict(),
-    }
-    return json.dumps(payload, indent=2)
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Odin core modular TUI")
-    parser.add_argument("-l", "--live", action="store_true", help="Run live dashboard loop")
-    parser.add_argument("--json", action="store_true", help="Emit JSON payload")
-    parser.add_argument("--profile", default=os.environ.get("ODIN_TUI_PROFILE", "core"), help="Profile name: core|legacy")
-    parser.add_argument("--config", help="Optional JSON config file for panel/profile overrides")
-    parser.add_argument("--refresh", type=int, help="Refresh interval seconds override")
-    parser.add_argument("--odin-dir", help="Override ODIN_DIR path")
-    args = parser.parse_args(argv)
-
-    profile = resolve_profile(args.profile, args.config)
-
-    if args.profile == "legacy" or profile["name"] == "legacy":
-        return _run_legacy(args)
-
-    refresh_seconds = max(1, int(args.refresh or profile.get("refresh_seconds", 5)))
-    odin_dir = Path(args.odin_dir) if args.odin_dir else env_odin_dir()
-
-    console = Console()
-
-    if args.json:
-        data = _collect_core(odin_dir)
-        print(_json_output(profile, data))
-        return 0
-
-    def build_renderable():
-        data = _collect_core(odin_dir)
-        width = console.size.width
-        height = console.size.height
-        return _render_core(data, profile, width, height)
-
-    if args.live:
-        with Live(build_renderable(), console=console, refresh_per_second=2, screen=True) as live:
-            try:
-                while True:
-                    time.sleep(refresh_seconds)
-                    live.update(build_renderable())
-            except KeyboardInterrupt:
-                return 0
-
-    console.print(build_renderable())
-    return 0
+def main():
+    """Entry point for the Textual TUI."""
+    app = OdinTUI()
+    app.run()
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
