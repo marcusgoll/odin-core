@@ -1,5 +1,20 @@
 # odin-core
 
+## Get Started in 5 Minutes
+
+```bash
+npm install -g @odin-ai/cli
+odin init my-project
+cd my-project
+odin config set llm.api_key <your-key>
+odin template add lead-gen
+odin run lead-gen -- --target "marketing agencies in Austin"
+```
+
+[Full CLI documentation ->](docs/cli-quickstart.md)
+
+---
+
 Vendor-agnostic, policy-driven orchestrator core with plugin-first extensibility.
 
 Odin is a self-hosted orchestration engine that routes tasks through a policy engine, executes them via plugins, and logs every decision for audit. It replaces ad-hoc shell scripts with a structured runtime that enforces capability-based security, supports both native Rust plugins and legacy Bash compatibility, and exposes a TUI dashboard for monitoring.
