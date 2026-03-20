@@ -3,15 +3,32 @@
   "version": "0.1.0",
   "description": "AI agent orchestration platform — automate anything with multi-agent systems",
   "type": "module",
-  "bin": { "odin": "bin/odin.mjs" },
-  "files": ["bin/", "src/", "templates/"],
-  "engines": { "node": ">=20" },
+  "bin": {
+    "odin": "bin/odin.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "templates/"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
-    "commander": "^12.0.0",
     "chalk": "^5.3.0",
+    "commander": "^12.0.0",
     "ora": "^8.0.0",
     "yaml": "^2.4.0"
   },
-  "keywords": ["ai", "agents", "automation", "orchestration", "browser-automation"],
+  "optionalDependencies": {
+    "playwright": "^1.58.2"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "automation",
+    "orchestration",
+    "browser-automation"
+  ],
   "license": "MIT"
 }
