@@ -11,5 +11,8 @@
 __pycache__/
 *.pyc
 
+# Node
+node_modules/
+
 # Local git worktrees
 .worktrees/
