@@ -1,0 +1,13 @@
+name: price-monitor
+description: Monitor competitor prices across multiple retailers
+version: 0.1.0
+requires:
+  - browser
+inputs:
+  - name: config
+    description: "Path to products JSON config file (uses built-in demo products if omitted)"
+    required: false
+    default: ""
+outputs:
+  - prices.json
+  - price-history.json

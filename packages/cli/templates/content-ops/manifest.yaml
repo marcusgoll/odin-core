@@ -1,0 +1,17 @@
+name: content-ops
+description: Research articles, generate social posts, and build a content calendar
+version: 0.1.0
+requires:
+  - browser
+  - llm
+inputs:
+  - name: source
+    description: "Website to scrape articles from"
+    required: false
+    default: "searchengineland.com"
+  - name: count
+    description: "Number of articles to research"
+    required: false
+    default: "3"
+outputs:
+  - content-calendar.json

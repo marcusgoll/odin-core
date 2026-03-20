@@ -1,0 +1,7 @@
+name: workflow-automation
+description: n8n lead enrichment workflow with test scenarios and ROI analysis
+version: 0.1.0
+requires: []
+inputs: []
+outputs:
+  - lead-enrichment.json

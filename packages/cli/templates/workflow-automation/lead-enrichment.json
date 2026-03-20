@@ -1,0 +1,343 @@
+{
+  "name": "Lead Enrichment Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook: New Lead",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "lead-intake"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "name",
+              "name": "name",
+              "value": "={{ $json.body.name || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "email",
+              "name": "email",
+              "value": "={{ $json.body.email || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "company",
+              "name": "company",
+              "value": "={{ $json.body.company || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "website",
+              "name": "website",
+              "value": "={{ $json.body.website || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "received_at",
+              "name": "received_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "is_valid",
+              "name": "is_valid",
+              "value": "={{ $json.body.name && $json.body.email && $json.body.company ? true : false }}",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "validate-fields",
+      "name": "Validate & Normalize",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "validation-check",
+              "leftValue": "={{ $json.is_valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-valid",
+      "name": "Valid Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://{{ $json.website }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": true,
+              "maxRedirects": 3
+            }
+          },
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "fetch-website",
+      "name": "Fetch Company Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 200],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Lead Scoring Function\n// Scores leads 1-100 based on enrichment signals\n\nconst lead = {\n  name: $('Validate & Normalize').item.json.name,\n  email: $('Validate & Normalize').item.json.email,\n  company: $('Validate & Normalize').item.json.company,\n  website: $('Validate & Normalize').item.json.website,\n  received_at: $('Validate & Normalize').item.json.received_at\n};\n\n// Get website content (may be empty if fetch failed)\nconst pageContent = $input.item.json.data || $input.item.json.body || '';\nconst contentLower = (typeof pageContent === 'string' ? pageContent : '').toLowerCase();\n\nlet score = 30; // Base score for having valid data\nconst signals = [];\n\n// Signal 1: Professional email domain (not gmail/yahoo/hotmail)\nconst emailDomain = lead.email.split('@')[1] || '';\nconst freeProviders = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com', 'icloud.com'];\nif (!freeProviders.includes(emailDomain.toLowerCase())) {\n  score += 15;\n  signals.push('Professional email domain');\n} else {\n  signals.push('Free email provider (-5)');\n  score -= 5;\n}\n\n// Signal 2: Website is reachable and has content\nif (contentLower.length > 500) {\n  score += 10;\n  signals.push('Website has substantial content');\n} else if (contentLower.length > 0) {\n  score += 5;\n  signals.push('Website reachable but minimal content');\n} else {\n  signals.push('Website unreachable or empty');\n}\n\n// Signal 3: Industry keywords suggesting high-value verticals\nconst highValueKeywords = ['saas', 'platform', 'enterprise', 'ai', 'machine learning',\n  'fintech', 'healthcare', 'logistics', 'automation', 'analytics'];\nconst midValueKeywords = ['consulting', 'agency', 'marketing', 'services', 'solutions',\n  'software', 'technology', 'digital'];\n\nconst highMatches = highValueKeywords.filter(kw => contentLower.includes(kw));\nconst midMatches = midValueKeywords.filter(kw => contentLower.includes(kw));\n\nif (highMatches.length >= 2) {\n  score += 20;\n  signals.push(`High-value industry signals: ${highMatches.slice(0, 3).join(', ')}`);\n} else if (highMatches.length === 1 || midMatches.length >= 2) {\n  score += 10;\n  signals.push(`Industry signals: ${[...highMatches, ...midMatches].slice(0, 3).join(', ')}`);\n}\n\n// Signal 4: Company size indicators\nconst sizeKeywords = ['team of', 'employees', 'offices', 'locations', 'global', 'worldwide'];\nconst sizeMatches = sizeKeywords.filter(kw => contentLower.includes(kw));\nif (sizeMatches.length > 0) {\n  score += 10;\n  signals.push('Company size indicators found');\n}\n\n// Signal 5: Buying intent keywords\nconst intentKeywords = ['pricing', 'demo', 'free trial', 'get started', 'contact sales', 'book a call'];\nconst intentMatches = intentKeywords.filter(kw => contentLower.includes(kw));\nif (intentMatches.length >= 2) {\n  score += 10;\n  signals.push('Strong buying infrastructure present');\n}\n\n// Cap score at 100\nscore = Math.min(100, Math.max(1, score));\n\n// Determine lead tier\nlet tier;\nif (score >= 70) tier = 'hot';\nelse if (score >= 40) tier = 'warm';\nelse tier = 'cold';\n\nreturn {\n  json: {\n    ...lead,\n    score,\n    tier,\n    signals,\n    enrichment: {\n      website_content_length: contentLower.length,\n      email_domain: emailDomain,\n      high_value_keywords: highMatches,\n      mid_value_keywords: midMatches\n    },\n    scored_at: new Date().toISOString()\n  }\n};"
+      },
+      "id": "score-lead",
+      "name": "Score Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1140, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "score-check",
+              "leftValue": "={{ $json.score }}",
+              "rightValue": 70,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-lead",
+      "name": "Hot Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1360, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=🔥 *HOT LEAD — Score: {{ $json.score }}/100*\n\n*Name:* {{ $json.name }}\n*Email:* {{ $json.email }}\n*Company:* {{ $json.company }}\n*Website:* {{ $json.website }}\n\n*Tier:* {{ $json.tier }}\n*Signals:*\n{{ $json.signals.map(s => '• ' + s).join('\\n') }}\n\n_Received: {{ $json.received_at }}_",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "notify-hot-lead",
+      "name": "Telegram: Hot Lead Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1600, 100],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-cred-id",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log nurture lead to file for batch follow-up\nconst lead = $json;\nconst logEntry = {\n  logged_at: new Date().toISOString(),\n  name: lead.name,\n  email: lead.email,\n  company: lead.company,\n  website: lead.website,\n  score: lead.score,\n  tier: lead.tier,\n  signals: lead.signals,\n  action: 'nurture_queue'\n};\n\n// In production, this would append to a database or CRM\n// For this demo, we format it as a JSONL entry\nreturn {\n  json: {\n    status: 'queued_for_nurture',\n    lead: logEntry,\n    message: `Lead ${lead.name} (${lead.company}) scored ${lead.score}/100 — added to nurture queue`\n  }\n};"
+      },
+      "id": "log-nurture",
+      "name": "Queue for Nurture",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1600, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'processed', lead: { name: $json.name || $json.lead?.name, score: $json.score || $json.lead?.score, tier: $json.tier || $json.lead?.tier, action: $json.score >= 70 ? 'hot_lead_notified' : 'nurture_queued' } }) }}",
+        "options": {}
+      },
+      "id": "respond-hot",
+      "name": "Respond: Hot",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1840, 100]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'processed', lead: { name: $json.lead?.name || $json.name, score: $json.lead?.score || $json.score, tier: $json.lead?.tier || $json.tier, action: 'nurture_queued' } }) }}",
+        "options": {}
+      },
+      "id": "respond-nurture",
+      "name": "Respond: Nurture",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1840, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'error', message: 'Missing required fields. Please provide: name, email, company', received: { name: $json.name || null, email: $json.email || null, company: $json.company || null } }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "respond-invalid",
+      "name": "Respond: Invalid",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [920, 420]
+    }
+  ],
+  "connections": {
+    "Webhook: New Lead": {
+      "main": [
+        [
+          {
+            "node": "Validate & Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Normalize": {
+      "main": [
+        [
+          {
+            "node": "Valid Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Lead?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Company Website",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: Invalid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Company Website": {
+      "main": [
+        [
+          {
+            "node": "Score Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score Lead": {
+      "main": [
+        [
+          {
+            "node": "Hot Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hot Lead?": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Hot Lead Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Queue for Nurture",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Hot Lead Alert": {
+      "main": [
+        [
+          {
+            "node": "Respond: Hot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Queue for Nurture": {
+      "main": [
+        [
+          {
+            "node": "Respond: Nurture",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

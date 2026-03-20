@@ -1,0 +1,21 @@
+name: lead-gen
+description: Scrape business directories and enrich leads with website data
+version: 0.1.0
+requires:
+  - browser
+inputs:
+  - name: target
+    description: "Description of leads to find (e.g., 'marketing agencies in Texas')"
+    required: false
+    default: "digital marketing agencies in Texas"
+  - name: profile_limit
+    description: "Max number of profile pages to enrich"
+    required: false
+    default: "10"
+  - name: website_limit
+    description: "Max number of company websites to visit"
+    required: false
+    default: "5"
+outputs:
+  - leads.json
+  - leads.csv
