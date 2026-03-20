@@ -17,7 +17,7 @@ from .collectors.agents import collect as collect_agents
 from .collectors.inbox import collect as collect_inbox
 from .collectors.logs import collect as collect_logs
 from .models import PanelData
-from .widgets import InboxTable, AgentsTable, EventLog, ApprovalsTable, DetailModal, OdinHeader
+from .widgets import InboxTable, AgentsTable, EventLog, ApprovalsTable, DetailModal, OdinHeader, BudgetPanel
 from . import api_client
 
 # ── Data-driven detail modal configuration ─────────────────────────
@@ -121,6 +121,7 @@ class OdinTUI(App):
     def compose(self) -> ComposeResult:
         yield Header()
         yield OdinHeader(id="odin-header")
+        yield BudgetPanel(id="budget-panel")
         with Horizontal(id="main"):
             with Vertical(id="left", classes="column"):
                 yield InboxTable(id="inbox-table")
@@ -152,8 +153,9 @@ class OdinTUI(App):
             items=raw_approvals,
             meta={"pending": sum(1 for a in raw_approvals if a.get("status") == "pending")},
         )
+        budget_data = api_client.fetch_budgets()
         self.call_from_thread(
-            self._update_panels, inbox_data, agents_data, logs_data, health_data, approvals_data
+            self._update_panels, inbox_data, agents_data, logs_data, health_data, approvals_data, budget_data
         )
 
     def _update_panels(
@@ -163,6 +165,7 @@ class OdinTUI(App):
         logs_data: PanelData,
         health_data: PanelData,
         approvals_data: PanelData,
+        budget_data: dict | None = None,
     ) -> None:
         """Update all panels with freshly collected data (runs on UI thread)."""
         self._inbox_data = inbox_data
@@ -174,6 +177,7 @@ class OdinTUI(App):
         self.query_one("#agents-table", AgentsTable).update_data(agents_data)
         self.query_one("#event-log", EventLog).update_data(logs_data)
         self.query_one("#approvals-table", ApprovalsTable).update_data(approvals_data)
+        self.query_one("#budget-panel", BudgetPanel).update_data(budget_data)
 
         # Update status header bar (sole owner of health display)
         self.query_one("#odin-header", OdinHeader).update_data(

@@ -6,6 +6,7 @@ from .event_log import EventLog
 from .approvals_table import ApprovalsTable
 from .detail_modal import DetailModal
 from .header_panel import OdinHeader
+from .budget_panel import BudgetPanel
 
 __all__ = [
     "InboxTable",
@@ -14,4 +15,5 @@ __all__ = [
     "ApprovalsTable",
     "DetailModal",
     "OdinHeader",
+    "BudgetPanel",
 ]

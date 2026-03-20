@@ -7,6 +7,12 @@ Screen {
     dock: top;
 }
 
+#budget-panel {
+    height: 2;
+    dock: top;
+    background: $surface;
+}
+
 #main {
     height: 1fr;
 }

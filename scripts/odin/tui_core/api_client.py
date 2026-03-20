@@ -71,3 +71,7 @@ def restart_agent(name: str) -> dict | None:
 
 def send_command(command: str) -> dict | None:
     return post("/api/v1/commands", {"command": command})
+
+
+def fetch_budgets() -> dict | None:
+    return get("/api/v1/system/budgets")
