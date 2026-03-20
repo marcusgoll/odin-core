@@ -7,7 +7,7 @@ from pathlib import Path
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Header, Footer, Static, DataTable, Log, Input
+from textual.widgets import Header, Footer, Static, Input
 from textual.worker import Worker
 from textual import work
 
@@ -19,6 +19,8 @@ from .collectors.logs import collect as collect_logs
 from .collectors.kanban import collect as collect_kanban
 from .collectors.github import collect as collect_github
 from .models import PanelData
+from .widgets import InboxTable, AgentsTable, EventLog, ApprovalsTable
+from . import api_client
 
 
 class OdinTUI(App):
@@ -39,41 +41,21 @@ class OdinTUI(App):
     def __init__(self, odin_dir: Path | None = None, **kwargs):
         super().__init__(**kwargs)
         self._odin_dir = odin_dir or env_odin_dir()
-        self._log_seen: set[str] = set()
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal(id="main"):
             with Vertical(id="left", classes="column"):
-                yield DataTable(id="inbox-table")
-                yield DataTable(id="agents-table")
+                yield InboxTable(id="inbox-table")
+                yield AgentsTable(id="agents-table")
             with Vertical(id="right", classes="column"):
-                yield Log(id="event-log", highlight=True, max_lines=500)
-                yield DataTable(id="approvals-table")
+                yield EventLog(id="event-log")
+                yield ApprovalsTable(id="approvals-table")
         yield Input(id="command-bar", placeholder="Type command...")
         yield Footer()
 
     def on_mount(self) -> None:
-        """Set up tables and start polling."""
-        inbox_tbl = self.query_one("#inbox-table", DataTable)
-        inbox_tbl.add_columns("Task", "Type", "Source", "Age")
-        inbox_tbl.cursor_type = "row"
-        inbox_tbl.border_title = "Inbox"
-
-        agents_tbl = self.query_one("#agents-table", DataTable)
-        agents_tbl.add_columns("Agent", "Role", "State", "Task")
-        agents_tbl.cursor_type = "row"
-        agents_tbl.border_title = "Agents"
-
-        approvals_tbl = self.query_one("#approvals-table", DataTable)
-        approvals_tbl.add_columns("Task", "Risk", "Status", "Created")
-        approvals_tbl.cursor_type = "row"
-        approvals_tbl.border_title = "Approvals"
-
-        event_log = self.query_one("#event-log", Log)
-        event_log.border_title = "Events"
-
-        # Initial data load + periodic refresh
+        """Start polling — widgets handle their own column setup."""
         self.refresh_data()
         self.set_interval(5.0, self.refresh_data)
 
@@ -85,8 +67,9 @@ class OdinTUI(App):
         agents_data = collect_agents(odin_dir)
         logs_data = collect_logs(odin_dir)
         health_data = collect_orchestrator(odin_dir)
+        approvals = api_client.fetch_approvals()
         self.call_from_thread(
-            self._update_panels, inbox_data, agents_data, logs_data, health_data
+            self._update_panels, inbox_data, agents_data, logs_data, health_data, approvals
         )
 
     def _update_panels(
@@ -95,44 +78,13 @@ class OdinTUI(App):
         agents_data: PanelData,
         logs_data: PanelData,
         health_data: PanelData,
+        approvals: list[dict],
     ) -> None:
         """Update all panels with freshly collected data (runs on UI thread)."""
-        # Update inbox table
-        tbl = self.query_one("#inbox-table", DataTable)
-        tbl.clear()
-        for item in inbox_data.items:
-            tbl.add_row(
-                item.get("task_id", ""),
-                item.get("task_label", item.get("type", "")),
-                item.get("source", ""),
-                item.get("age", ""),
-            )
-        tbl.border_title = f"Inbox ({inbox_data.meta.get('pending', 0)})"
-
-        # Update agents table
-        tbl = self.query_one("#agents-table", DataTable)
-        tbl.clear()
-        for item in agents_data.items:
-            tbl.add_row(
-                item.get("name", ""),
-                item.get("role", ""),
-                item.get("state", ""),
-                item.get("task", ""),
-            )
-        busy = agents_data.meta.get("busy", 0)
-        total = agents_data.meta.get("count", 0)
-        tbl.border_title = f"Agents ({busy}/{total} busy)"
-
-        # Update event log — append only new lines to avoid duplication
-        log = self.query_one("#event-log", Log)
-        for item in logs_data.items:
-            ts = item.get("time", "")
-            src = item.get("source", "")
-            msg = item.get("message", "")
-            line_key = f"{item.get('ts', '')}|{src}|{msg}"
-            if line_key not in self._log_seen:
-                self._log_seen.add(line_key)
-                log.write_line(f"[{ts}] [{src}] {msg}")
+        self.query_one("#inbox-table", InboxTable).update_data(inbox_data)
+        self.query_one("#agents-table", AgentsTable).update_data(agents_data)
+        self.query_one("#event-log", EventLog).update_data(logs_data)
+        self.query_one("#approvals-table", ApprovalsTable).update_data(approvals)
 
         # Update header subtitle with orchestrator health
         if health_data.items:
@@ -171,13 +123,26 @@ class OdinTUI(App):
         )
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle command bar submission."""
+        """Handle command bar submission — dispatch to engine API."""
         cmd = event.value.strip()
         command_bar = self.query_one("#command-bar", Input)
         command_bar.value = ""
         command_bar.display = False
         if cmd:
-            self.notify(f"Command: {cmd}", title="Command", timeout=3)
+            self._dispatch_command(cmd)
+
+    @work(thread=True)
+    def _dispatch_command(self, cmd: str) -> None:
+        """Send command to engine API in a background thread."""
+        result = api_client.send_command(cmd)
+        if result:
+            self.call_from_thread(
+                self.notify, f"OK: {cmd}", title="Command", timeout=3
+            )
+        else:
+            self.call_from_thread(
+                self.notify, f"Failed: {cmd}", title="Command", severity="error", timeout=3
+            )
 
 
 def main():
