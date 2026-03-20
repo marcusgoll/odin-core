@@ -1,0 +1,11 @@
+name: hello-world
+description: A simple test template that prints a greeting
+version: 0.1.0
+requires: []
+inputs:
+  - name: name
+    description: "Name to greet"
+    required: false
+    default: "World"
+outputs:
+  - greeting.txt
