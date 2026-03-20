@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
+from typing import Any, Callable
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Header, Footer, Static, Input, DataTable
-from textual.worker import Worker
+from textual.widgets import Header, Footer, Input, DataTable
 from textual import work
 
 from .collectors import env_odin_dir
@@ -16,11 +15,43 @@ from .collectors.orchestrator import collect as collect_orchestrator
 from .collectors.agents import collect as collect_agents
 from .collectors.inbox import collect as collect_inbox
 from .collectors.logs import collect as collect_logs
-from .collectors.kanban import collect as collect_kanban
-from .collectors.github import collect as collect_github
 from .models import PanelData
 from .widgets import InboxTable, AgentsTable, EventLog, ApprovalsTable, DetailModal, OdinHeader
 from . import api_client
+
+# ── Data-driven detail modal configuration ─────────────────────────
+_DETAIL_CONFIGS: dict[str, dict[str, Any]] = {
+    "inbox-table": {
+        "data_attr": "_inbox_data",
+        "id_key": "task_id",
+        "title_fmt": "Task: {}",
+        "actions": [("Requeue", "requeue"), ("Cancel", "cancel")],
+        "api_map": {
+            "requeue": api_client.requeue_task,
+            "cancel": api_client.cancel_task,
+        },
+    },
+    "agents-table": {
+        "data_attr": "_agents_data",
+        "id_key": "name",
+        "title_fmt": "Agent: {}",
+        "actions": [("Kill", "kill"), ("Restart", "restart")],
+        "api_map": {
+            "kill": api_client.kill_agent,
+            "restart": api_client.restart_agent,
+        },
+    },
+    "approvals-table": {
+        "data_attr": "_approvals_data",
+        "id_key": "task_id",
+        "title_fmt": "Approval: {}",
+        "actions": [("Approve", "approve"), ("Reject", "reject")],
+        "api_map": {
+            "approve": api_client.approve_task,
+            "reject": api_client.reject_task,
+        },
+    },
+}
 
 
 class OdinTUI(App):
@@ -43,6 +74,7 @@ class OdinTUI(App):
         self._odin_dir = odin_dir or env_odin_dir()
         self._inbox_data: PanelData | None = None
         self._agents_data: PanelData | None = None
+        self._approvals_data: PanelData | None = None
         self._health_data: PanelData | None = None
 
     def compose(self) -> ComposeResult:
@@ -63,7 +95,7 @@ class OdinTUI(App):
         self.refresh_data()
         self.set_interval(5.0, self.refresh_data)
 
-    @work(thread=True)
+    @work(thread=True, exclusive=True)
     def refresh_data(self) -> None:
         """Collect data from all sources in a background thread."""
         odin_dir = self._odin_dir
@@ -71,9 +103,16 @@ class OdinTUI(App):
         agents_data = collect_agents(odin_dir)
         logs_data = collect_logs(odin_dir)
         health_data = collect_orchestrator(odin_dir)
-        approvals = api_client.fetch_approvals()
+        raw_approvals = api_client.fetch_approvals()
+        approvals_data = PanelData(
+            key="approvals",
+            title="Approvals",
+            status="ok" if raw_approvals else "warn",
+            items=raw_approvals,
+            meta={"pending": sum(1 for a in raw_approvals if a.get("status") == "pending")},
+        )
         self.call_from_thread(
-            self._update_panels, inbox_data, agents_data, logs_data, health_data, approvals
+            self._update_panels, inbox_data, agents_data, logs_data, health_data, approvals_data
         )
 
     def _update_panels(
@@ -82,135 +121,66 @@ class OdinTUI(App):
         agents_data: PanelData,
         logs_data: PanelData,
         health_data: PanelData,
-        approvals: list[dict],
+        approvals_data: PanelData,
     ) -> None:
         """Update all panels with freshly collected data (runs on UI thread)."""
         self._inbox_data = inbox_data
         self._agents_data = agents_data
+        self._approvals_data = approvals_data
         self._health_data = health_data
 
         self.query_one("#inbox-table", InboxTable).update_data(inbox_data)
         self.query_one("#agents-table", AgentsTable).update_data(agents_data)
         self.query_one("#event-log", EventLog).update_data(logs_data)
-        self.query_one("#approvals-table", ApprovalsTable).update_data(approvals)
+        self.query_one("#approvals-table", ApprovalsTable).update_data(approvals_data)
 
-        # Update header subtitle with orchestrator health
-        if health_data.items:
-            health = health_data.items[0].get("value", "unknown")
-            heartbeat = health_data.items[1].get("value", "n/a") if len(health_data.items) > 1 else "n/a"
-            self.sub_title = f"Health: {health} | Heartbeat: {heartbeat}"
-
-        # Update status header bar
+        # Update status header bar (sole owner of health display)
         self.query_one("#odin-header", OdinHeader).update_data(
             health_data, agents_data, inbox_data
         )
 
-    # ── Row selection → detail modals ──────────────────────────────
+    # ── Row selection → detail modals (data-driven) ────────────────
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Open a detail modal when Enter is pressed on a table row."""
         table = event.data_table
-
-        if isinstance(table, InboxTable):
-            self._show_inbox_detail(event)
-        elif isinstance(table, AgentsTable):
-            self._show_agent_detail(event)
-        elif isinstance(table, ApprovalsTable):
-            self._show_approval_detail(event)
-
-    def _show_inbox_detail(self, event: DataTable.RowSelected) -> None:
-        """Show task detail modal for the selected inbox row."""
-        if not self._inbox_data:
+        table_id = table.id
+        config = _DETAIL_CONFIGS.get(table_id) if table_id else None
+        if not config:
             return
+
+        data: PanelData | None = getattr(self, config["data_attr"], None)
+        if not data:
+            return
+
         row_idx = event.cursor_row
-        if row_idx < 0 or row_idx >= len(self._inbox_data.items):
+        if row_idx < 0 or row_idx >= len(data.items):
             return
-        task = self._inbox_data.items[row_idx]
-        task_id = task.get("task_id", "unknown")
-        modal = DetailModal(
-            title=f"Task: {task_id}",
-            content=task,
-            actions=[
-                ("Requeue", f"requeue-{task_id}"),
-                ("Cancel", f"cancel-{task_id}"),
-            ],
-        )
-        self.push_screen(modal, callback=self._handle_inbox_action)
 
-    def _show_agent_detail(self, event: DataTable.RowSelected) -> None:
-        """Show agent detail modal for the selected agent row."""
-        if not self._agents_data:
-            return
-        row_idx = event.cursor_row
-        if row_idx < 0 or row_idx >= len(self._agents_data.items):
-            return
-        agent = self._agents_data.items[row_idx]
-        name = agent.get("name", "unknown")
-        modal = DetailModal(
-            title=f"Agent: {name}",
-            content=agent,
-            actions=[
-                ("Kill", f"kill-{name}"),
-                ("Restart", f"restart-{name}"),
-            ],
-        )
-        self.push_screen(modal, callback=self._handle_agent_action)
+        item = data.items[row_idx]
+        item_id = item.get(config["id_key"], "unknown")
+        title = config["title_fmt"].format(item_id)
+        actions = [(label, f"{verb}-{item_id}") for label, verb in config["actions"]]
+        api_map: dict[str, Callable] = config["api_map"]
 
-    def _show_approval_detail(self, event: DataTable.RowSelected) -> None:
-        """Show approval detail modal for the selected approval row."""
-        table = self.query_one("#approvals-table", ApprovalsTable)
-        row_idx = event.cursor_row
-        if row_idx < 0 or row_idx >= len(table._approvals):
-            return
-        approval = table._approvals[row_idx]
-        task_id = approval.get("task_id", "unknown")
-        modal = DetailModal(
-            title=f"Approval: {task_id}",
-            content=approval,
-            actions=[
-                ("Approve", f"approve-{task_id}"),
-                ("Reject", f"reject-{task_id}"),
-            ],
-        )
-        self.push_screen(modal, callback=self._handle_approval_action)
+        modal = DetailModal(title=title, content=item, actions=actions)
 
-    # ── Modal dismiss callbacks ────────────────────────────────────
+        def _on_dismiss(action_id: str | None) -> None:
+            if not action_id:
+                return
+            for verb, fn in api_map.items():
+                prefix = f"{verb}-"
+                if action_id.startswith(prefix):
+                    target = action_id[len(prefix):]
+                    self._run_api_action(verb, target, fn)
+                    return
 
-    def _handle_inbox_action(self, action_id: str | None) -> None:
-        """Process inbox modal action (requeue or cancel)."""
-        if not action_id:
-            return
-        if action_id.startswith("requeue-"):
-            task_id = action_id[len("requeue-"):]
-            self._run_api_action("requeue", task_id, api_client.requeue_task)
-        elif action_id.startswith("cancel-"):
-            task_id = action_id[len("cancel-"):]
-            self._run_api_action("cancel", task_id, api_client.cancel_task)
+        self.push_screen(modal, callback=_on_dismiss)
 
-    def _handle_agent_action(self, action_id: str | None) -> None:
-        """Process agent modal action (kill or restart)."""
-        if not action_id:
-            return
-        if action_id.startswith("kill-"):
-            name = action_id[len("kill-"):]
-            self._run_api_action("kill", name, api_client.kill_agent)
-        elif action_id.startswith("restart-"):
-            name = action_id[len("restart-"):]
-            self._run_api_action("restart", name, api_client.restart_agent)
-
-    def _handle_approval_action(self, action_id: str | None) -> None:
-        """Process approval modal action (approve or reject)."""
-        if not action_id:
-            return
-        if action_id.startswith("approve-"):
-            task_id = action_id[len("approve-"):]
-            self._run_api_action("approve", task_id, api_client.approve_task)
-        elif action_id.startswith("reject-"):
-            task_id = action_id[len("reject-"):]
-            self._run_api_action("reject", task_id, api_client.reject_task)
+    # ── API action runner ──────────────────────────────────────────
 
     @work(thread=True)
-    def _run_api_action(self, verb: str, target: str, fn) -> None:
+    def _run_api_action(self, verb: str, target: str, fn: Callable) -> None:
         """Execute an API action in a background thread and notify the user."""
         result = fn(target)
         if result is not None:

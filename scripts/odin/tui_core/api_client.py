@@ -8,28 +8,36 @@ import httpx
 API_BASE = os.environ.get("ODIN_API_URL", "http://localhost:9300")
 API_KEY = os.environ.get("ODIN_ENGINE_API_KEY", "")
 
+_client: httpx.Client | None = None
 
-def _headers() -> dict[str, str]:
-    return {"X-API-Key": API_KEY, "Content-Type": "application/json"}
+
+def _get_client() -> httpx.Client:
+    """Return a lazily initialized httpx.Client singleton."""
+    global _client
+    if _client is None:
+        _client = httpx.Client(
+            base_url=API_BASE,
+            headers={"X-API-Key": API_KEY, "Content-Type": "application/json"},
+            timeout=5.0,
+        )
+    return _client
 
 
 def get(path: str) -> dict | list | None:
     try:
-        r = httpx.get(f"{API_BASE}{path}", headers=_headers(), timeout=5.0)
+        r = _get_client().get(path)
         r.raise_for_status()
         return r.json()
-    except Exception:
+    except (httpx.HTTPError, httpx.TimeoutException, ConnectionError):
         return None
 
 
 def post(path: str, body: dict | None = None) -> dict | list | None:
     try:
-        r = httpx.post(
-            f"{API_BASE}{path}", headers=_headers(), json=body or {}, timeout=5.0
-        )
+        r = _get_client().post(path, json=body or {})
         r.raise_for_status()
         return r.json()
-    except Exception:
+    except (httpx.HTTPError, httpx.TimeoutException, ConnectionError):
         return None
 
 

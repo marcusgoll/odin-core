@@ -16,7 +16,7 @@ class AgentsTable(DataTable):
                 item.get("name", ""),
                 item.get("role", ""),
                 item.get("state", ""),
-                item.get("task_id", ""),
+                item.get("task", ""),
                 key=item.get("name", str(id(item))),
             )
         busy = data.meta.get("busy", 0)
