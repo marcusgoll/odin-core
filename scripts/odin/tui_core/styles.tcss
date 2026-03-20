@@ -61,19 +61,4 @@ Log {
     border-title-color: blue;
 }
 
-/* Responsive: narrow terminals stack panels vertically */
-@media (width < 100) {
-    #main {
-        layout: vertical;
-    }
-    .column {
-        width: 100%;
-        height: 1fr;
-    }
-    #left {
-        width: 100%;
-    }
-    #right {
-        width: 100%;
-    }
-}
+/* Responsive layout handled by Textual's container auto-sizing */
