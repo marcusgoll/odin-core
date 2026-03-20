@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
+from textual.events import Key
 from textual.widgets import Header, Footer, Input, DataTable
 from textual import work
 
@@ -54,6 +55,45 @@ _DETAIL_CONFIGS: dict[str, dict[str, Any]] = {
 }
 
 
+HISTORY_FILE = Path.home() / ".odin-tui-history"
+
+
+class CommandHistory:
+    """File-backed command history (max 50 entries)."""
+
+    def __init__(self) -> None:
+        self.entries: list[str] = []
+        self.index = -1
+        self._load()
+
+    def _load(self) -> None:
+        try:
+            self.entries = HISTORY_FILE.read_text().strip().splitlines()[-50:]
+        except FileNotFoundError:
+            self.entries = []
+
+    def add(self, cmd: str) -> None:
+        if cmd and (not self.entries or self.entries[-1] != cmd):
+            self.entries.append(cmd)
+            self.entries = self.entries[-50:]
+            HISTORY_FILE.write_text("\n".join(self.entries) + "\n")
+        self.index = -1
+
+    def up(self) -> str | None:
+        if not self.entries:
+            return None
+        if self.index < len(self.entries) - 1:
+            self.index += 1
+        return self.entries[-(self.index + 1)]
+
+    def down(self) -> str | None:
+        if self.index > 0:
+            self.index -= 1
+            return self.entries[-(self.index + 1)]
+        self.index = -1
+        return ""
+
+
 class OdinTUI(App):
     """Odin Overseer — interactive terminal dashboard."""
 
@@ -76,6 +116,7 @@ class OdinTUI(App):
         self._agents_data: PanelData | None = None
         self._approvals_data: PanelData | None = None
         self._health_data: PanelData | None = None
+        self._cmd_history = CommandHistory()
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -234,7 +275,25 @@ class OdinTUI(App):
         command_bar.value = ""
         command_bar.display = False
         if cmd:
+            self._cmd_history.add(cmd)
             self._dispatch_command(cmd)
+
+    def on_key(self, event: Key) -> None:
+        """Handle up/down arrow keys for command history navigation."""
+        command_bar = self.query_one("#command-bar", Input)
+        if command_bar.has_focus and command_bar.display:
+            if event.key == "up":
+                val = self._cmd_history.up()
+                if val is not None:
+                    command_bar.value = val
+                    command_bar.cursor_position = len(val)
+                event.prevent_default()
+            elif event.key == "down":
+                val = self._cmd_history.down()
+                if val is not None:
+                    command_bar.value = val
+                    command_bar.cursor_position = len(val)
+                event.prevent_default()
 
     @work(thread=True)
     def _dispatch_command(self, cmd: str) -> None:
