@@ -69,14 +69,17 @@ class CommandHistory:
     def _load(self) -> None:
         try:
             self.entries = HISTORY_FILE.read_text().strip().splitlines()[-50:]
-        except FileNotFoundError:
+        except OSError:
             self.entries = []
 
     def add(self, cmd: str) -> None:
         if cmd and (not self.entries or self.entries[-1] != cmd):
             self.entries.append(cmd)
             self.entries = self.entries[-50:]
-            HISTORY_FILE.write_text("\n".join(self.entries) + "\n")
+            try:
+                HISTORY_FILE.write_text("\n".join(self.entries) + "\n")
+            except OSError:
+                pass
         self.index = -1
 
     def up(self) -> str | None:
