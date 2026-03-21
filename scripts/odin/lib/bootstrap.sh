@@ -653,13 +653,7 @@ odin_bootstrap_cmd_tui() {
     return 0
   fi
 
-  odin_bootstrap_info "tui placeholder"
-  if odin_bootstrap_mode_state_require_event "tui.opened.verified"; then
-    :
-  else
-    local rc=$?
-    return "${rc}"
-  fi
+  exec bash "${ODIN_BOOTSTRAP_LIB_DIR}/../odin-tui" --live
 }
 
 odin_bootstrap_cmd_inbox_add() {
