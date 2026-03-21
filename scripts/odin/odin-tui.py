@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from tui_core.app import main
+from tui_core.app_legacy import main
 
 
 if __name__ == "__main__":
